@@ -1,0 +1,208 @@
+(function () {
+  'use strict';
+  const E = window.GameEngine, S = window.GameStory, A = window.GameAudio;
+  const main = document.querySelector('#main'), modal = document.querySelector('#modal');
+  const SAVE = 'isrys.save.v1', ENDS = 'isrys.endings.v1', SETTINGS = 'isrys.settings.v1';
+  let storageWorks = true, saveWarning = '', mode = 'menu', opener = null;
+  let tapeOrder = ['meeting', 'unsaid', 'road'], disc = 'other', device = 'player', dragging = null;
+  let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function read(key) { try { return localStorage.getItem(key); } catch { storageWorks = false; return null; } }
+  function write(key, value) { try { localStorage.setItem(key, value); return true; } catch { storageWorks = false; return false; } }
+  function loadEnds() { try { const v = JSON.parse(read(ENDS)); return Array.isArray(v) ? v.filter(x => Object.hasOwn(S.endings, x)) : []; } catch { return []; } }
+  let unlocked = loadEnds();
+  const raw = read(SAVE);
+  let saved = raw ? E.parseSave(raw) : null;
+  if (raw && !saved) saveWarning = 'Збереження не вдалося прочитати. Можна почати нову історію або імпортувати іншу копію.';
+  if (saved) unlocked = [...new Set([...unlocked, ...saved.unlocked])];
+  let state = saved || E.initialState(unlocked);
+  try {
+    const prefs = JSON.parse(read(SETTINGS));
+    if (prefs && typeof prefs === 'object') {
+      for (const key of ['music', 'effects']) if (typeof prefs[key] === 'number' && Number.isFinite(prefs[key])) A.settings[key] = Math.max(0, Math.min(1, prefs[key]));
+      A.settings.muted = prefs.muted === true;
+      if (typeof prefs.motion === 'boolean') reducedMotion = prefs.motion;
+    }
+  } catch { /* Default preferences are sufficient. */ }
+  document.body.classList.toggle('reduce-motion', reducedMotion);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const btn = (label, action, value = '', cls = '') => `<button class="${cls}" data-action="${action}" data-value="${esc(value)}">${label}</button>`;
+  const icon = type => type === 'vinyl' ? '◎' : type === 'tape' ? '▣' : '◉';
+  const chapters = ['prologue', 'vinyl', 'tape', 'cd', 'finale'];
+  function announce(text) { document.querySelector('#announcement').textContent = text; }
+  function status() {
+    document.querySelector('#save-status').textContent = storageWorks
+      ? (saved ? 'Прогрес збережено на цьому пристрої' : 'Три носії. Три історії. Один вечір.')
+      : 'Автозбереження недоступне — збережи файл у налаштуваннях';
+  }
+  function persist() {
+    state.unlocked = [...new Set([...unlocked, ...state.unlocked])];
+    unlocked = state.unlocked;
+    saved = JSON.parse(E.serialize(state));
+    write(SAVE, E.serialize(state)); write(ENDS, JSON.stringify(unlocked)); status();
+  }
+  function dispatch(type, value) {
+    const previous = state;
+    const focused = document.activeElement;
+    const focusedAction = focused?.dataset?.action;
+    const focusedValue = focused?.dataset?.value;
+    state = E.reduce(state, { type, value });
+    if (state === previous) return;
+    persist(); renderGame();
+    if (state.feedback) announce(state.feedback);
+    else if (previous.chapter !== state.chapter || previous.phase !== state.phase) {
+      document.querySelector('#scene-heading')?.focus();
+      announce(S.chapters[state.chapter].title);
+    }
+    if (previous.chapter === state.chapter && previous.phase === state.phase && focusedAction) {
+      const replacement = [...main.querySelectorAll('[data-action]')].find(node => node.dataset.action === focusedAction && node.dataset.value === focusedValue);
+      (replacement || main.querySelector('.puzzle button:not(:disabled)'))?.focus();
+    }
+  }
+  function openModal(title, html, kicker = 'ЗАПИС', returnTo) {
+    opener = returnTo || document.activeElement;
+    document.querySelector('#modal-title').textContent = title;
+    document.querySelector('#modal-kicker').textContent = kicker;
+    document.querySelector('#modal-content').innerHTML = html;
+    if (!modal.open) modal.showModal();
+    document.querySelector('#close-modal').focus();
+  }
+  function closeModal() { modal.close(); }
+  modal.addEventListener('close', () => { if (opener?.isConnected) opener.focus(); else document.querySelector('#scene-heading, #menu-heading')?.focus(); });
+  document.querySelector('#close-modal').addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  function renderMenu() {
+    mode = 'menu'; A.stop(); document.body.dataset.chapter = 'prologue';
+    main.innerHTML = `<section class="menu-hero"><img class="scene-image" src="assets/scenes/prologue.png" alt="Вечірня кімната: на освітленому лампою столі коробка з платівкою, касетою й CD, навушники та телефон."><div class="hero-shade"></div><div class="menu-copy"><p class="eyebrow">ПРО МУЗИКУ, ЯКА ЗАЛИШАЄТЬСЯ</p><h1 id="menu-heading" tabindex="-1">I still remember<br><em>your sound</em><span class="title-period">.</span></h1><p class="menu-description">Іноді, щоб знову почути музику,<br>потрібно відкрити стару коробку.</p><div class="menu-actions">${btn('Почати історію <span aria-hidden="true">→</span>', 'new', '', 'primary')}${saved ? btn('Продовжити <span aria-hidden="true">↗</span>', 'continue', '', 'secondary') : ''}</div><div class="menu-links">${btn(`Відкриті фінали <span class="count">${unlocked.length}/3</span>`, 'endings', '', 'text-button')}${btn('Про проєкт', 'about', '', 'text-button')}</div>${saveWarning ? `<p class="notice">${esc(saveWarning)}</p>` : ''}<p class="menu-meta">10–15 ХВИЛИН <span>·</span> МИША АБО КЛАВІАТУРА <span>·</span> МОЖНА БЕЗ ЗВУКУ</p></div><div class="hero-caption"><span class="tiny-disc" aria-hidden="true"></span><span>Деякі спогади<br>мають власне звучання.</span></div></section><div class="chapter-preview"><span class="eyebrow">УСЕРЕДИНІ КОРОБКИ</span><span><b>01</b> Платівка <i>кінець 1970-х</i></span><span><b>02</b> Касета <i>1990-ті</i></span><span><b>03</b> Компакт-диск <i>початок 2000-х</i></span></div>`;
+    status();
+  }
+  function gameMedia(chapter) { return chapter === 'finale' ? 'prologue' : chapter; }
+  function musicStatus() {
+    const node = document.querySelector('#music-note');
+    if (node) node.textContent = A.hasTrack(state.chapter) ? 'Музика з локального запису' : 'Музичний запис ще добирається. Доступні механічні ефекти й текстові описи.';
+  }
+  function renderGame() {
+    mode = 'game'; const c = S.chapters[state.chapter];
+    const loss = state.phase === 'loss', ended = state.phase === 'ended';
+    document.body.dataset.chapter = state.chapter;
+    main.innerHTML = `<section class="game"><div class="scene-top"><div><p class="eyebrow">${c.number}</p><h1 id="scene-heading" tabindex="-1">${esc(ended ? S.endings[state.ending].title : c.title)}</h1><p class="era">${c.era}</p></div><ol class="timeline" aria-label="Розділи історії">${chapters.map((key, i) => `<li class="${key === state.chapter ? 'current' : chapters.indexOf(state.chapter) > i ? 'done' : ''}" ${key === state.chapter ? 'aria-current="step"' : ''}><span>${i === 0 ? '○' : i === 4 ? '✧' : '0' + i}</span><span class="sr-only">${S.chapters[key].title}</span></li>`).join('')}</ol></div><div class="scene-layout"><div class="scene-window ${loss ? 'loss' : ''}"><img class="scene-image" src="assets/scenes/${gameMedia(state.chapter)}.png" alt="${esc(c.era)} — мальована локація з предметами історії."><div class="scene-vignette"></div>${!loss && !ended ? `<div class="hotspots" aria-label="Предмети у кімнаті">${c.objects.map(o => `<button data-object="${o.id}" class="hotspot ${(state.seen[state.chapter] || []).includes(o.id) ? 'seen' : ''}" style="--x:${o.x}%;--y:${o.y}%" aria-label="Оглянути: ${esc(o.label)}"><span aria-hidden="true">${(state.seen[state.chapter] || []).includes(o.id) ? '✓' : '+'}</span><span class="hotspot-label">${esc(o.label)}</span></button>`).join('')}</div>` : ''}<div class="scene-caption"><span class="sound-dot" aria-hidden="true"></span>${loss ? 'Якби носія не залишилося' : ended ? 'Твоя історія триває' : 'Придивись. У речей є що розповісти.'}</div>${state.phase === 'choice' ? `<div class="playing-token" aria-hidden="true"><span class="${state.chapter === 'vinyl' ? 'record-spin' : 'reel-spin'}">${icon(state.chapter)}</span></div>` : ''}</div><aside class="story-panel" aria-label="Історія та дії">${panel(c)}</aside></div>${!loss && !ended ? `<section class="object-shelf" aria-label="Огляд предметів"><span class="eyebrow">ПРИДИВИСЬ БЛИЖЧЕ</span><div>${c.objects.map(o => `<button data-object="${o.id}" class="object-button"><span aria-hidden="true">${(state.seen[state.chapter] || []).includes(o.id) ? '✓' : '+'}</span>${esc(o.label)}</button>`).join('')}</div><span class="discovered">${(state.seen[state.chapter] || []).length}/${c.objects.length} оглянуто</span></section>` : ''}<p class="audio-note" id="music-note"></p></section>`;
+    A.scene(state.chapter, state.phase === 'choice', loss); musicStatus(); status();
+    wireDrag();
+  }
+  function panel(c) {
+    if (state.phase === 'ended') {
+      const end = S.endings[state.ending];
+      return `<p class="eyebrow">ФІНАЛ ВІДКРИТО · ${unlocked.length}/3</p><p>${end.text}</p><blockquote>${end.quote}</blockquote><div class="ending-notes">${S.journal(state.choices).map(n => `<p>${n.text}</p>`).join('')}</div>${btn('Повернутися до фінального вибору', 'backToFinale', '', 'primary')}${btn('Титри й матеріали', 'credits', '', 'secondary')}${btn('Відкриті фінали', 'endings', '', 'text-button')}${btn('Почати знову', 'new', '', 'text-button')}`;
+    }
+    if (state.phase === 'loss') return `<p class="eyebrow">ЗБЕРЕЖЕНИЙ МОМЕНТ</p><p>${esc(c.aftermath[state.choices[state.chapter]])}</p><div class="loss-copy"><span aria-hidden="true">∅</span><h2>А якби цього<br>не залишилося?</h2><p>${esc(c.loss)}</p></div>${btn('Повернути звук і продовжити <span aria-hidden="true">→</span>', 'restore', '', 'primary')}`;
+    if (state.chapter === 'finale') return `<p>${c.intro}</p><p class="person">${c.person}</p><blockquote>${c.line}</blockquote><p class="task">${c.task}</p><div class="choices">${Object.entries(S.endings).map(([key, v]) => btn(`<b>${v.title}</b><small>${v.label}</small><span aria-hidden="true">↗</span>`, 'ending', key, 'choice-button')).join('')}</div>${btn('Переглянути свої рішення', 'journal', '', 'text-button')}`;
+    if (state.phase === 'choice') return `<p class="eyebrow">ЗАПИС ЗНОВУ МОЖНА ПОЧУТИ</p><p>${c.success}</p><p class="person">${c.person}</p><blockquote>${c.question}</blockquote><div class="choices">${c.options.map(([key, label, sub]) => btn(`<b>${label}</b><small>${sub}</small><span aria-hidden="true">↗</span>`, 'choice', key, 'choice-button')).join('')}</div>`;
+    return `<p>${c.intro}</p><p class="person">${c.person}</p><blockquote>${c.line}</blockquote><p class="task">${c.task}</p>${state.chapter === 'prologue' ? btn('Відкрити перший спогад <span aria-hidden="true">→</span>', 'enter', '', 'primary') : puzzle()}${state.feedback ? `<p class="feedback" role="status">${esc(state.feedback)}</p>` : ''}<div class="help-actions">${btn('Підказка', 'hint', '', 'text-button')}${c.knowledge ? btn('Як це працює', 'knowledge', '', 'text-button') : ''}</div>`;
+  }
+  function puzzle() {
+    if (state.chapter === 'vinyl') {
+      const options = [
+        [['edges', 'Взяти за краї'], ['surface', 'Взяти за поверхню']],
+        [['clean', 'Прибрати пил щіткою'], ['play', 'Одразу запустити']],
+        [['place', 'Покласти на програвач'], ['play', 'Опустити голку']],
+        [['45', '45 об/хв'], ['33', '33⅓ об/хв']],
+        [['play', 'Запустити й опустити тонарм'], ['45', 'Змінити швидкість']]
+      ];
+      return `<div class="puzzle vinyl-puzzle"><div class="puzzle-label"><span>ПІДГОТОВКА ПРОГРАВАЧА</span><span>${state.step + 1}/5</span></div><div class="step-track" aria-hidden="true">${[0, 1, 2, 3, 4].map(i => `<span class="${i < state.step ? 'complete' : ''}"></span>`).join('')}</div><div class="puzzle-options">${options[state.step].map(([v, text]) => btn(text, 'vinyl', v, 'option')).join('')}</div></div>`;
+    }
+    if (state.chapter === 'tape') return `<div class="puzzle"><p class="puzzle-label">ТРИ ФРАГМЕНТИ · ВСТАНОВИ ПОРЯДОК</p><ol class="tape-cards">${tapeOrder.map((id, i) => `<li draggable="true" data-fragment="${id}"><span class="fragment-number">0${i + 1}</span><div><b>${S.fragments[id].name}</b><small>${S.fragments[id].description}</small></div><div class="move-buttons"><button data-move="${i}" data-direction="-1" aria-label="Перемістити ${S.fragments[id].name} вгору" ${i === 0 ? 'disabled' : ''}>↑</button><button data-move="${i}" data-direction="1" aria-label="Перемістити ${S.fragments[id].name} вниз" ${i === 2 ? 'disabled' : ''}>↓</button></div></li>`).join('')}</ol>${btn('Перевірити послідовність', 'check-tape', '', 'primary')}</div>`;
+    return `<div class="puzzle cd-puzzle"><label for="disc">Який диск?</label><select id="disc"><option value="other" ${disc === 'other' ? 'selected' : ''}>№1 · Audio CD · інший альбом</option><option value="mp3" ${disc === 'mp3' ? 'selected' : ''}>№2 · MP3 · потрібний запис</option><option value="audio" ${disc === 'audio' ? 'selected' : ''}>№3 · Audio CD · потрібний запис</option></select><label for="device">На чому відтворити?</label><select id="device"><option value="player" ${device === 'player' ? 'selected' : ''}>Старий програвач · лише Audio CD</option><option value="computer" ${device === 'computer' ? 'selected' : ''}>Комп’ютер · підтримує MP3</option></select>${btn('Спробувати відтворити', 'check-disc', '', 'primary')}</div>`;
+  }
+  function moveCard(index, to, focusDirection = '1') {
+    if (to < 0 || to >= tapeOrder.length || to === index) return;
+    const id = tapeOrder[index]; tapeOrder.splice(index, 1); tapeOrder.splice(to, 0, id);
+    A.effect('click'); renderGame();
+    const target = main.querySelector(`[data-move="${to}"][data-direction="${focusDirection}"]:not(:disabled)`) || main.querySelector(`[data-move="${to}"]:not(:disabled)`);
+    target?.focus(); announce(`${S.fragments[id].name}: позиція ${to + 1} з 3.`);
+  }
+  function wireDrag() {
+    main.querySelectorAll('[data-fragment]').forEach(card => {
+      card.addEventListener('dragstart', e => { dragging = card.dataset.fragment; e.dataTransfer.setData('text/plain', dragging); e.dataTransfer.effectAllowed = 'move'; });
+      card.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+      card.addEventListener('drop', e => { e.preventDefault(); const from = tapeOrder.indexOf(dragging), to = tapeOrder.indexOf(card.dataset.fragment); if (from >= 0) moveCard(from, to); dragging = null; });
+      card.addEventListener('dragend', () => { dragging = null; });
+    });
+  }
+  function showJournal() {
+    const notes = S.journal(state.choices);
+    openModal('Те, що залишилося', notes.length ? notes.map((n, i) => `<article class="journal-entry"><span class="eyebrow">0${i + 1}</span><h3>${n.title}</h3><p>${n.text}</p></article>`).join('') : '<p>Поки що тут порожньо. Твої рішення з’являтимуться після кожної історії.</p>', 'ЩОДЕННИК');
+  }
+  function showEndings() {
+    openModal('Відкриті фінали', `<p>Кожне завершення — інший спосіб залишити музику поруч. Відкрито ${unlocked.length} з 3.</p><div class="ending-gallery">${Object.entries(S.endings).map(([id, end], i) => unlocked.includes(id) ? `<article><span class="eyebrow">0${i + 1} · ВІДКРИТО</span><h3>${end.title}</h3><p>${end.quote}</p></article>` : `<article class="locked"><span class="eyebrow">0${i + 1} · ЩЕ НЕ ВІДКРИТО</span><h3>Історія попереду</h3><p>Дійди до фінального вибору й обери інше продовження.</p></article>`).join('')}</div>`, 'КОЛЕКЦІЯ ЗАВЕРШЕНЬ');
+  }
+  function credits() {
+    openModal('Люди, звук і матеріали', '<p><strong>I still remember your sound</strong> — некомерційний студентський проєкт для курсу «Технології мультимедіа».</p><p>Авторка проєкту — єдина учасниця. Допомога з реалізацією й підготовкою матеріалів: Codex. Мальовані локації: створено за допомогою OpenAI ImageGen, 2026.</p><p>Механічні клацання, шум стрічки й паперу: процедурні звукові ефекти Web Audio. Це не записи популярних композицій.</p><p><strong>Музика епох ще добирається.</strong> У цій версії комерційних музичних записів немає. Після визначення джерел тут з’являться фактично використані назви, виконавці й відомості про використання.</p><p>Файли гри та зображення зберігаються локально. Реєстр джерел і статус матеріалів — у docs/materials.md.</p>', 'ТИТРИ · РОБОЧА ВЕРСІЯ');
+  }
+  function showSettings() {
+    openModal('Твій спосіб слухати', `<div class="settings-form"><label for="music-volume">Музика <output id="music-value">${Math.round(A.settings.music * 100)}%</output></label><input id="music-volume" type="range" min="0" max="100" value="${Math.round(A.settings.music * 100)}"><label for="effects-volume">Ефекти <output id="effects-value">${Math.round(A.settings.effects * 100)}%</output></label><input id="effects-volume" type="range" min="0" max="100" value="${Math.round(A.settings.effects * 100)}"><label class="checkbox-label"><input id="muted" type="checkbox" ${A.settings.muted ? 'checked' : ''}> Вимкнути весь звук</label><label class="checkbox-label"><input id="motion" type="checkbox" ${reducedMotion ? 'checked' : ''}> Зменшити рух і переходи</label><p class="small">Усі завдання мають текстові підказки. Для керування використовуй Tab, Shift+Tab, Enter, Space; Escape закриває вікна.</p><p class="small">${storageWorks ? 'Прогрес автоматично зберігається в цьому браузері. Автономну копію та різні адреси браузер може зберігати окремо.' : 'Браузер не надає доступу до автозбереження. Експортуй файл, щоб повернутися до цього місця.'}</p><div class="save-actions">${btn('Зберегти у файл', 'export', '', 'secondary')}${btn('Завантажити з файлу', 'import', '', 'secondary')}</div></div>`, 'НАЛАШТУВАННЯ');
+  }
+  function startNew() {
+    if (saved && !(saved.chapter === 'prologue' && !Object.keys(saved.seen).length)) {
+      openModal('Почати нову історію?', `<p>Поточне проходження почнеться заново. Відкриті фінали залишаться у колекції.</p>${btn('Так, почати спочатку', 'confirm-new', '', 'primary')}${btn('Повернутися', 'close', '', 'text-button')}`, 'НОВЕ ПРОХОДЖЕННЯ');
+    } else newGame();
+  }
+  function newGame() {
+    if (modal.open) modal.close();
+    state = E.initialState(unlocked); tapeOrder = ['meeting', 'unsaid', 'road']; disc = 'other'; device = 'player';
+    A.unlock(); persist(); renderGame(); document.querySelector('#scene-heading').focus();
+  }
+  const actions = {
+    new: startNew, 'confirm-new': newGame, close: closeModal,
+    continue: () => { state = saved; A.unlock(); renderGame(); document.querySelector('#scene-heading').focus(); },
+    enter: () => dispatch('enter'), vinyl: v => { A.effect('click'); dispatch('vinyl', v); },
+    choice: v => dispatch('choice', v), restore: () => { const text = S.chapters[state.chapter].transition; A.effect('paper'); dispatch('restore'); openModal('Спогад залишається', `<p>${esc(text)}</p>`, 'ПЕРЕХІД'); },
+    'check-tape': () => { A.effect('rewind'); dispatch('tape', tapeOrder); },
+    'check-disc': () => { A.effect('click'); dispatch('disc', [disc, device]); },
+    ending: v => dispatch('ending', v), backToFinale: () => dispatch('backToFinale'),
+    hint: () => openModal('Нитка спогаду', `<p>${S.chapters[state.chapter].hint}</p>`, 'ПІДКАЗКА'),
+    knowledge: () => openModal('Як це працює', `<p>${S.chapters[state.chapter].knowledge}</p>`, 'ПРО НОСІЙ'),
+    journal: showJournal, endings: showEndings, credits,
+    about: () => openModal('Музика залишається', '<p>Інтерактивна історія про те, як час, кімната й спосіб слухання змінюють наше сприйняття музики.</p><p>Після збою мережі студентка знаходить коробку з носіями. Через речі й записки ти допоможеш відновити три історії. Це образна реконструкція спогадів.</p><p>У грі немає прихованої оцінки твоїх рішень. Помилки дають повторну спробу. Останній вибір визначає фінал.</p><p class="notice">Робоча версія: популярні музичні записи, портрети та фінальне мультимедійне оформлення ще готуються.</p>' + btn('Титри й матеріали', 'credits', '', 'secondary'), 'ПРО ПРОЄКТ'),
+    export: () => {
+      const blob = new Blob([E.serialize(state)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob), link = document.createElement('a');
+      link.href = url; link.download = 'i-still-remember-your-sound-save.json'; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000); announce('Файл збереження підготовлено.');
+    },
+    import: () => document.querySelector('#import-save').click()
+  };
+  document.addEventListener('click', e => {
+    const objectButton = e.target.closest('[data-object]');
+    if (objectButton && mode === 'game') {
+      const id = objectButton.dataset.object, obj = S.chapters[state.chapter].objects.find(o => o.id === id);
+      A.unlock(); A.effect('paper'); dispatch('inspect', id);
+      openModal(obj.label, `<p>${esc(obj.text)}</p>`, 'ЗНАЙДЕНИЙ ПРЕДМЕТ', main.querySelector(`[data-object="${id}"]`)); return;
+    }
+    const move = e.target.closest('[data-move]');
+    if (move) { moveCard(Number(move.dataset.move), Number(move.dataset.move) + Number(move.dataset.direction), move.dataset.direction); return; }
+    const button = e.target.closest('[data-action]');
+    if (button && Object.hasOwn(actions, button.dataset.action)) { A.unlock(); actions[button.dataset.action](button.dataset.value); }
+  });
+  main.addEventListener('change', e => { if (e.target.id === 'disc') disc = e.target.value; if (e.target.id === 'device') device = e.target.value; });
+  modal.addEventListener('input', e => {
+    const id = e.target.id;
+    if (id === 'music-volume' || id === 'effects-volume') {
+      const kind = id.split('-')[0]; A.settings[kind] = Number(e.target.value) / 100; document.querySelector(`#${kind}-value`).textContent = `${e.target.value}%`;
+    } else if (id === 'muted') A.settings.muted = e.target.checked;
+    else if (id === 'motion') { reducedMotion = e.target.checked; document.body.classList.toggle('reduce-motion', reducedMotion); }
+    else return;
+    A.unlock(); A.apply(); write(SETTINGS, JSON.stringify({ ...A.settings, motion: reducedMotion }));
+  });
+  document.querySelector('#import-save').addEventListener('change', async e => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    const imported = file.size < 100000 ? E.parseSave(await file.text()) : null;
+    if (!imported) return openModal('Файл не підходить', '<p>Це не збереження цієї гри або файл пошкоджений. Поточний прогрес залишився на місці.</p>', 'ЗБЕРЕЖЕННЯ');
+    state = imported; if (modal.open) modal.close(); persist(); renderGame(); document.querySelector('#scene-heading').focus();
+  });
+  document.querySelector('#journal').addEventListener('click', showJournal);
+  document.querySelector('#settings').addEventListener('click', showSettings);
+  document.querySelector('#menu').addEventListener('click', () => { renderMenu(); document.querySelector('#menu-heading').focus(); });
+  document.querySelector('#brand').addEventListener('click', () => { renderMenu(); document.querySelector('#menu-heading').focus(); });
+  document.addEventListener('music-unavailable', musicStatus);
+  renderMenu();
+})();

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151e24">
+  <meta name="description" content="Мальована інтерактивна історія про музику, носії та людську пам’ять.">
+  <title>I still remember your sound</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="src/engine.js"></script>
+  <script defer src="src/story.js"></script>
+  <script defer src="src/audio.js"></script>
+  <script defer src="src/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">До історії</a>
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="brand" id="brand" aria-label="Головне меню"><span class="brand-disc" aria-hidden="true"></span><span>I still remember<br><i>your sound</i></span></button>
+      <span class="edition">ІНТЕРАКТИВНА ІСТОРІЯ <span>·</span> УКРАЇНСЬКОЮ</span>
+      <nav aria-label="Інструменти"><button id="journal" class="quiet">Щоденник <span aria-hidden="true">↗</span></button><button id="settings" class="quiet">Налаштування</button><button id="menu" class="icon-button" aria-label="Головне меню">☰</button></nav>
+    </header>
+    <main id="main" tabindex="-1"></main>
+    <footer class="footer"><span id="save-status" role="status">Три носії. Три історії. Один вечір.</span><span>Наведи, щоб знайти. Натисни, щоб згадати.</span></footer>
+  </div>
+  <dialog id="modal" aria-labelledby="modal-title"><div class="modal-header"><span class="eyebrow" id="modal-kicker">ЗАПИС</span><button id="close-modal" class="icon-button" aria-label="Закрити вікно">×</button></div><h2 id="modal-title"></h2><div id="modal-content"></div></dialog>
+  <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
+  <input id="import-save" type="file" accept=".json,application/json" hidden>
+  <noscript>Для цієї історії потрібно увімкнути JavaScript у браузері.</noscript>
+</body>
+</html>
