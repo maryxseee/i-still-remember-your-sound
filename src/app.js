@@ -1,10 +1,11 @@
 (function () {
   'use strict';
-  const E = window.GameEngine, S = window.GameStory, A = window.GameAudio;
+  const E = window.GameEngine, S = window.GameStory, A = window.GameAudio, F = window.GameFlow;
   const main = document.querySelector('#main'), modal = document.querySelector('#modal');
   const SAVE = 'isrys.save.v1', ENDS = 'isrys.endings.v1', SETTINGS = 'isrys.settings.v1';
   let storageWorks = true, saveWarning = '', mode = 'menu', opener = null;
   let tapeOrder = ['meeting', 'unsaid', 'road'], disc = 'other', device = 'player', dragging = null;
+  let inspection = null, discStage = 'disc', textSize = 'standard';
   let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function read(key) { try { return localStorage.getItem(key); } catch { storageWorks = false; return null; } }
   function write(key, value) { try { localStorage.setItem(key, value); return true; } catch { storageWorks = false; return false; } }
@@ -21,9 +22,11 @@
       for (const key of ['music', 'effects']) if (typeof prefs[key] === 'number' && Number.isFinite(prefs[key])) A.settings[key] = Math.max(0, Math.min(1, prefs[key]));
       A.settings.muted = prefs.muted === true;
       if (typeof prefs.motion === 'boolean') reducedMotion = prefs.motion;
+      if (prefs.textSize === 'large') textSize = 'large';
     }
   } catch { /* Default preferences are sufficient. */ }
   document.body.classList.toggle('reduce-motion', reducedMotion);
+  document.body.dataset.textSize = textSize;
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const btn = (label, action, value = '', cls = '') => `<button class="${cls}" data-action="${action}" data-value="${esc(value)}">${label}</button>`;
   const icon = type => type === 'vinyl' ? '◎' : type === 'tape' ? '▣' : '◉';
@@ -47,16 +50,31 @@
     const focusedValue = focused?.dataset?.value;
     state = E.reduce(state, { type, value });
     if (state === previous) return;
+    inspection = null;
     persist(); renderGame();
-    if (state.feedback) announce(state.feedback);
-    else if (previous.chapter !== state.chapter || previous.phase !== state.phase) {
-      document.querySelector('#scene-heading')?.focus();
-      announce(S.chapters[state.chapter].title);
-    }
+    if (state.feedback || previous.chapter !== state.chapter || previous.phase !== state.phase || previous.step !== state.step) focusDialogue();
     if (previous.chapter === state.chapter && previous.phase === state.phase && focusedAction) {
       const replacement = [...main.querySelectorAll('[data-action]')].find(node => node.dataset.action === focusedAction && node.dataset.value === focusedValue);
-      (replacement || main.querySelector('.puzzle button:not(:disabled)'))?.focus();
+      if (!state.feedback) (replacement || main.querySelector('.dialogue-next, .puzzle button:not(:disabled)'))?.focus();
     }
+  }
+  function focusDialogue() {
+    const text = document.querySelector('#dialogue-text');
+    if (text) { text.focus(); announce(text.textContent); }
+    else main.querySelector('.story-panel button')?.focus();
+  }
+  function advanceDialogue() {
+    state = F.advance(state, S); persist(); renderGame(); focusDialogue();
+  }
+  function inspectText(speaker, text, returnId = '') {
+    inspection = { speaker, lines: F.split(text), cursor: 0, returnId };
+    A.effect('paper'); renderGame(); focusDialogue();
+  }
+  function finishInspection() {
+    const id = inspection?.returnId;
+    inspection = null; renderGame();
+    const object = id ? main.querySelector(`[data-object="${id}"]`) : null;
+    if (object) object.focus(); else focusDialogue();
   }
   function openModal(title, html, kicker = 'ЗАПИС', returnTo) {
     opener = returnTo || document.activeElement;
@@ -71,7 +89,7 @@
   document.querySelector('#close-modal').addEventListener('click', closeModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
   function renderMenu() {
-    mode = 'menu'; A.stop(); document.body.dataset.chapter = 'prologue';
+    mode = 'menu'; inspection = null; A.stop(); document.body.dataset.chapter = 'prologue';
     main.innerHTML = `<section class="menu-hero"><img class="scene-image" src="assets/scenes/prologue.png" alt="Вечірня кімната: на освітленому лампою столі коробка з платівкою, касетою й CD, навушники та телефон."><div class="hero-shade"></div><div class="menu-copy"><p class="eyebrow">ПРО МУЗИКУ, ЯКА ЗАЛИШАЄТЬСЯ</p><h1 id="menu-heading" tabindex="-1">I still remember<br><em>your sound</em><span class="title-period">.</span></h1><p class="menu-description">Іноді, щоб знову почути музику,<br>потрібно відкрити стару коробку.</p><div class="menu-actions">${btn('Почати історію <span aria-hidden="true">→</span>', 'new', '', 'primary')}${saved ? btn('Продовжити <span aria-hidden="true">↗</span>', 'continue', '', 'secondary') : ''}</div><div class="menu-links">${btn(`Відкриті фінали <span class="count">${unlocked.length}/3</span>`, 'endings', '', 'text-button')}${btn('Про проєкт', 'about', '', 'text-button')}</div>${saveWarning ? `<p class="notice">${esc(saveWarning)}</p>` : ''}<p class="menu-meta">10–15 ХВИЛИН <span>·</span> МИША АБО КЛАВІАТУРА <span>·</span> МОЖНА БЕЗ ЗВУКУ</p></div><div class="hero-caption"><span class="tiny-disc" aria-hidden="true"></span><span>Деякі спогади<br>мають власне звучання.</span></div></section><div class="chapter-preview"><span class="eyebrow">УСЕРЕДИНІ КОРОБКИ</span><span><b>01</b> Платівка <i>кінець 1970-х</i></span><span><b>02</b> Касета <i>1990-ті</i></span><span><b>03</b> Компакт-диск <i>початок 2000-х</i></span></div>`;
     status();
   }
@@ -82,36 +100,53 @@
   }
   function renderGame() {
     mode = 'game'; const c = S.chapters[state.chapter];
-    const loss = state.phase === 'loss', ended = state.phase === 'ended';
+    const view = F.presentation(state, S), beats = F.sequence(state, S);
+    const loss = state.phase === 'loss' && !view.ready && beats[view.cursor].dim, ended = state.phase === 'ended';
+    const explorable = state.phase === 'explore' && view.ready && view.activity === 'explore' && !inspection && !state.feedback;
     document.body.dataset.chapter = state.chapter;
-    main.innerHTML = `<section class="game"><div class="scene-top"><div><p class="eyebrow">${c.number}</p><h1 id="scene-heading" tabindex="-1">${esc(ended ? S.endings[state.ending].title : c.title)}</h1><p class="era">${c.era}</p></div><ol class="timeline" aria-label="Розділи історії">${chapters.map((key, i) => `<li class="${key === state.chapter ? 'current' : chapters.indexOf(state.chapter) > i ? 'done' : ''}" ${key === state.chapter ? 'aria-current="step"' : ''}><span>${i === 0 ? '○' : i === 4 ? '✧' : '0' + i}</span><span class="sr-only">${S.chapters[key].title}</span></li>`).join('')}</ol></div><div class="scene-layout"><div class="scene-window ${loss ? 'loss' : ''}"><img class="scene-image" src="assets/scenes/${gameMedia(state.chapter)}.png" alt="${esc(c.era)} — мальована локація з предметами історії."><div class="scene-vignette"></div>${!loss && !ended ? `<div class="hotspots" aria-label="Предмети у кімнаті">${c.objects.map(o => `<button data-object="${o.id}" class="hotspot ${(state.seen[state.chapter] || []).includes(o.id) ? 'seen' : ''}" style="--x:${o.x}%;--y:${o.y}%" aria-label="Оглянути: ${esc(o.label)}"><span aria-hidden="true">${(state.seen[state.chapter] || []).includes(o.id) ? '✓' : '+'}</span><span class="hotspot-label">${esc(o.label)}</span></button>`).join('')}</div>` : ''}<div class="scene-caption"><span class="sound-dot" aria-hidden="true"></span>${loss ? 'Якби носія не залишилося' : ended ? 'Твоя історія триває' : 'Придивись. У речей є що розповісти.'}</div>${state.phase === 'choice' ? `<div class="playing-token" aria-hidden="true"><span class="${state.chapter === 'vinyl' ? 'record-spin' : 'reel-spin'}">${icon(state.chapter)}</span></div>` : ''}</div><aside class="story-panel" aria-label="Історія та дії">${panel(c)}</aside></div>${!loss && !ended ? `<section class="object-shelf" aria-label="Огляд предметів"><span class="eyebrow">ПРИДИВИСЬ БЛИЖЧЕ</span><div>${c.objects.map(o => `<button data-object="${o.id}" class="object-button"><span aria-hidden="true">${(state.seen[state.chapter] || []).includes(o.id) ? '✓' : '+'}</span>${esc(o.label)}</button>`).join('')}</div><span class="discovered">${(state.seen[state.chapter] || []).length}/${c.objects.length} оглянуто</span></section>` : ''}<p class="audio-note" id="music-note"></p></section>`;
+    main.innerHTML = `<section class="game"><div class="scene-top"><div><p class="eyebrow">${c.number}</p><h1 id="scene-heading" tabindex="-1">${esc(ended ? S.endings[state.ending].title : c.title)}</h1><p class="era">${c.era}</p></div><ol class="timeline" aria-label="Розділи історії">${chapters.map((key, i) => `<li class="${key === state.chapter ? 'current' : chapters.indexOf(state.chapter) > i ? 'done' : ''}" ${key === state.chapter ? 'aria-current="step"' : ''}><span>${i === 0 ? '○' : i === 4 ? '✧' : '0' + i}</span><span class="sr-only">${S.chapters[key].title}</span></li>`).join('')}</ol></div><div class="scene-layout"><div class="scene-window ${loss ? 'loss' : ''}"><img class="scene-image" src="assets/scenes/${gameMedia(state.chapter)}.png" alt="${esc(c.era)} — мальована локація з предметами історії."><div class="scene-vignette"></div>${explorable ? `<div class="hotspots" aria-label="Предмети у кімнаті">${c.objects.map(o => `<button data-object="${o.id}" class="hotspot ${(state.seen[state.chapter] || []).includes(o.id) ? 'seen' : ''}" style="--x:${o.x}%;--y:${o.y}%" aria-label="Оглянути: ${esc(o.label)}"><span aria-hidden="true">${(state.seen[state.chapter] || []).includes(o.id) ? '✓' : '+'}</span><span class="hotspot-label">${esc(o.label)}</span></button>`).join('')}</div>` : ''}<div class="scene-caption"><span class="sound-dot" aria-hidden="true"></span>${loss ? 'Якби носія не залишилося' : ended ? 'Твоя історія триває' : explorable ? 'Обери предмет на сцені або під діалогом.' : c.era}</div></div><aside class="story-panel" aria-label="Історія та дії">${panel(c, view, beats)}</aside></div>${explorable ? `<section class="object-shelf" aria-label="Огляд предметів"><span class="eyebrow">ОГЛЯНУТИ РЕЧІ</span><div>${c.objects.map(o => `<button data-object="${o.id}" class="object-button"><span aria-hidden="true">${(state.seen[state.chapter] || []).includes(o.id) ? '✓' : '+'}</span>${esc(o.label)}</button>`).join('')}</div><span class="discovered">${(state.seen[state.chapter] || []).length}/${c.objects.length} оглянуто</span></section>` : ''}<p class="audio-note" id="music-note"></p></section>`;
     A.scene(state.chapter, state.phase === 'choice', loss); musicStatus(); status();
     wireDrag();
   }
-  function panel(c) {
+  function speech(speaker, text, controls, meta = '') {
+    return `<div class="dialogue-heading"><p class="speaker">${esc(speaker)}</p>${meta ? `<span class="dialogue-progress">${esc(meta)}</span>` : ''}</div><p id="dialogue-text" class="dialogue-text" tabindex="-1">${esc(text)}</p><div class="dialogue-controls">${controls}</div>`;
+  }
+  function panel(c, view, beats) {
+    if (inspection) {
+      const last = inspection.cursor === inspection.lines.length - 1;
+      return speech(inspection.speaker, inspection.lines[inspection.cursor], btn(last ? 'Повернутися до сцени' : 'Далі →', 'inspection-next', '', 'primary dialogue-next'), `${inspection.cursor + 1} / ${inspection.lines.length}`);
+    }
+    if (state.feedback) return speech(c.person, state.feedback, btn('Спробувати ще раз', 'retry', '', 'primary dialogue-next'), 'Нічого страшного — можна повторити');
+    if (!view.ready) {
+      const beat = beats[view.cursor];
+      const last = view.cursor === beats.length - 1;
+      const label = !last ? 'Далі →' : state.phase === 'choice' || state.chapter === 'finale' ? 'До вибору →' : state.phase === 'ended' ? 'Завершити епілог →' : state.phase === 'loss' ? 'Продовжити →' : view.activity === 'puzzle' ? 'Спробувати →' : 'Оглянути кімнату →';
+      return speech(beat.speaker, beat.text, `${view.cursor ? btn('← Назад', 'previous-line', '', 'text-button') : ''}${btn(label, 'next-line', '', 'primary dialogue-next')}`, `${view.cursor + 1} / ${beats.length}`);
+    }
     if (state.phase === 'ended') {
       const end = S.endings[state.ending];
-      return `<p class="eyebrow">ФІНАЛ ВІДКРИТО · ${unlocked.length}/3</p><p>${end.text}</p><blockquote>${end.quote}</blockquote><div class="ending-notes">${S.journal(state.choices).map(n => `<p>${n.text}</p>`).join('')}</div>${btn('Повернутися до фінального вибору', 'backToFinale', '', 'primary')}${btn('Титри й матеріали', 'credits', '', 'secondary')}${btn('Відкриті фінали', 'endings', '', 'text-button')}${btn('Почати знову', 'new', '', 'text-button')}`;
+      return speech(end.title, `Фінал відкрито. У твоїй колекції ${unlocked.length} з 3 завершень. Можна повернутися до останнього вибору й побачити іншу історію.`, `${btn('Повернутися до фінального вибору', 'backToFinale', '', 'primary')}${btn('Титри й матеріали', 'credits', '', 'secondary')}${btn('Відкриті фінали', 'endings', '', 'text-button')}${btn('Почати знову', 'new', '', 'text-button')}`);
     }
-    if (state.phase === 'loss') return `<p class="eyebrow">ЗБЕРЕЖЕНИЙ МОМЕНТ</p><p>${esc(c.aftermath[state.choices[state.chapter]])}</p><div class="loss-copy"><span aria-hidden="true">∅</span><h2>А якби цього<br>не залишилося?</h2><p>${esc(c.loss)}</p></div>${btn('Повернути звук і продовжити <span aria-hidden="true">→</span>', 'restore', '', 'primary')}`;
-    if (state.chapter === 'finale') return `<p>${c.intro}</p><p class="person">${c.person}</p><blockquote>${c.line}</blockquote><p class="task">${c.task}</p><div class="choices">${Object.entries(S.endings).map(([key, v]) => btn(`<b>${v.title}</b><small>${v.label}</small><span aria-hidden="true">↗</span>`, 'ending', key, 'choice-button')).join('')}</div>${btn('Переглянути свої рішення', 'journal', '', 'text-button')}`;
-    if (state.phase === 'choice') return `<p class="eyebrow">ЗАПИС ЗНОВУ МОЖНА ПОЧУТИ</p><p>${c.success}</p><p class="person">${c.person}</p><blockquote>${c.question}</blockquote><div class="choices">${c.options.map(([key, label, sub]) => btn(`<b>${label}</b><small>${sub}</small><span aria-hidden="true">↗</span>`, 'choice', key, 'choice-button')).join('')}</div>`;
-    return `<p>${c.intro}</p><p class="person">${c.person}</p><blockquote>${c.line}</blockquote><p class="task">${c.task}</p>${state.chapter === 'prologue' ? btn('Відкрити перший спогад <span aria-hidden="true">→</span>', 'enter', '', 'primary') : puzzle()}${state.feedback ? `<p class="feedback" role="status">${esc(state.feedback)}</p>` : ''}<div class="help-actions">${btn('Підказка', 'hint', '', 'text-button')}${c.knowledge ? btn('Як це працює', 'knowledge', '', 'text-button') : ''}</div>`;
+    if (state.phase === 'loss') return speech('Спогад збережено', 'Ця історія залишиться з тобою. Можна відкрити наступний спогад.', btn('До наступного спогаду →', 'restore', '', 'primary dialogue-next'));
+    if (state.chapter === 'finale') return speech(c.person, 'Що ти хочеш зробити з цією колекцією?', `<div class="choices">${Object.entries(S.endings).map(([key, v]) => btn(`<b>${v.title}</b><small>${v.label}</small><span aria-hidden="true">↗</span>`, 'ending', key, 'choice-button')).join('')}</div>${btn('Переглянути свої рішення', 'journal', '', 'text-button')}`);
+    if (state.phase === 'choice') return speech(c.person, c.question, `<div class="choices">${c.options.map(([key, label, sub]) => btn(`<b>${label}</b><small>${sub}</small><span aria-hidden="true">↗</span>`, 'choice', key, 'choice-button')).join('')}</div>`);
+    if (view.activity === 'explore') {
+      const labels = { vinyl: 'До програвача →', tape: 'Відкрити касетне послання →', cd: 'Знайти запис →' };
+      return speech(c.person, state.chapter === 'prologue' ? 'У коробці три носії. Оглянь їх і записку. Коли будеш готова, почни зі сторони А.' : 'Можна придивитися до предметів і прочитати записки. Або почати завдання — я поясню кожний крок.', `${state.chapter === 'prologue' ? btn('Почати зі сторони А →', 'enter', '', 'primary') : btn(labels[state.chapter], 'start-puzzle', '', 'primary')}${btn('Підказка', 'hint', '', 'text-button')}`);
+    }
+    return puzzle();
   }
   function puzzle() {
     if (state.chapter === 'vinyl') {
-      const options = [
-        [['edges', 'Взяти за краї'], ['surface', 'Взяти за поверхню']],
-        [['clean', 'Прибрати пил щіткою'], ['play', 'Одразу запустити']],
-        [['place', 'Покласти на програвач'], ['play', 'Опустити голку']],
-        [['45', '45 об/хв'], ['33', '33⅓ об/хв']],
-        [['play', 'Запустити й опустити тонарм'], ['45', 'Змінити швидкість']]
-      ];
-      return `<div class="puzzle vinyl-puzzle"><div class="puzzle-label"><span>ПІДГОТОВКА ПРОГРАВАЧА</span><span>${state.step + 1}/5</span></div><div class="step-track" aria-hidden="true">${[0, 1, 2, 3, 4].map(i => `<span class="${i < state.step ? 'complete' : ''}"></span>`).join('')}</div><div class="puzzle-options">${options[state.step].map(([v, text]) => btn(text, 'vinyl', v, 'option')).join('')}</div></div>`;
+      const guide = F.vinylGuide(state.step);
+      return speech('Ребекка', guide.question, `<div class="puzzle vinyl-puzzle"><div class="step-track" aria-hidden="true">${[0, 1, 2, 3, 4].map(i => `<span class="${i < state.step ? 'complete' : ''}"></span>`).join('')}</div><div class="puzzle-options">${guide.options.map(([v, text]) => btn(text, 'vinyl', v, 'option')).join('')}</div></div>${puzzleHelp()}`, `Крок ${state.step + 1} з 5`);
     }
-    if (state.chapter === 'tape') return `<div class="puzzle"><p class="puzzle-label">ТРИ ФРАГМЕНТИ · ВСТАНОВИ ПОРЯДОК</p><ol class="tape-cards">${tapeOrder.map((id, i) => `<li draggable="true" data-fragment="${id}"><span class="fragment-number">0${i + 1}</span><div><b>${S.fragments[id].name}</b><small>${S.fragments[id].description}</small></div><div class="move-buttons"><button data-move="${i}" data-direction="-1" aria-label="Перемістити ${S.fragments[id].name} вгору" ${i === 0 ? 'disabled' : ''}>↑</button><button data-move="${i}" data-direction="1" aria-label="Перемістити ${S.fragments[id].name} вниз" ${i === 2 ? 'disabled' : ''}>↓</button></div></li>`).join('')}</ol>${btn('Перевірити послідовність', 'check-tape', '', 'primary')}</div>`;
-    return `<div class="puzzle cd-puzzle"><label for="disc">Який диск?</label><select id="disc"><option value="other" ${disc === 'other' ? 'selected' : ''}>№1 · Audio CD · інший альбом</option><option value="mp3" ${disc === 'mp3' ? 'selected' : ''}>№2 · MP3 · потрібний запис</option><option value="audio" ${disc === 'audio' ? 'selected' : ''}>№3 · Audio CD · потрібний запис</option></select><label for="device">На чому відтворити?</label><select id="device"><option value="player" ${device === 'player' ? 'selected' : ''}>Старий програвач · лише Audio CD</option><option value="computer" ${device === 'computer' ? 'selected' : ''}>Комп’ютер · підтримує MP3</option></select>${btn('Спробувати відтворити', 'check-disc', '', 'primary')}</div>`;
+    if (state.chapter === 'tape') return speech('Джоні', 'Розташуй фрагменти послання: початок угорі, завершення внизу. Пересувай картки стрілками ↑ ↓.', `<div class="puzzle"><ol class="tape-cards">${tapeOrder.map((id, i) => `<li draggable="true" data-fragment="${id}"><span class="fragment-number">${['Початок', 'Середина', 'Кінець'][i]}</span><div><b>${S.fragments[id].name}</b><small>${S.fragments[id].description}</small></div><div class="move-buttons"><button data-move="${i}" data-direction="-1" aria-label="Перемістити ${S.fragments[id].name} вгору" ${i === 0 ? 'disabled' : ''}>↑</button><button data-move="${i}" data-direction="1" aria-label="Перемістити ${S.fragments[id].name} вниз" ${i === 2 ? 'disabled' : ''}>↓</button></div></li>`).join('')}</ol>${btn('Перевірити порядок', 'check-tape', '', 'primary')}${btn('Прочитати записку Джоні', 'hint', '', 'secondary')}</div>${puzzleHelp()}`);
+    if (discStage === 'disc') return speech('Анжела', 'Який диск перевіримо? Поглянь на формат і список записів.', `<div class="choices disc-options">${[['other','Диск №1 · Audio CD','Інший альбом. Потрібного запису немає.'],['mp3','Диск №2 · MP3','Потрібний запис збережено як файл MP3.'],['audio','Диск №3 · Audio CD','Потрібний запис у списку звукових доріжок.']].map(([id,label,text])=>btn(`<b>${label}</b><small>${text}</small>`,'pick-disc',id,'choice-button')).join('')}</div>${puzzleHelp()}`, 'Крок 1 з 2 · диск');
+    const selected = { other: '№1 · Audio CD · інший альбом', mp3: '№2 · MP3 · потрібний запис', audio: '№3 · Audio CD · потрібний запис' }[disc];
+    return speech('Анжела', `Обрано диск ${selected}. Тепер виріши, на чому його відтворити.`, `<div class="choices device-options">${btn('<b>Старий CD-програвач</b><small>На корпусі зазначено: підтримує лише Audio CD.</small>','pick-device','player','choice-button')}${btn('<b>Комп’ютер</b><small>Має CD-привід і програму для файлів MP3.</small>','pick-device','computer','choice-button')}</div>${btn('← Обрати інший диск','change-disc','','text-button')}${puzzleHelp()}`, 'Крок 2 з 2 · пристрій');
   }
+  function puzzleHelp() { return `<div class="help-actions">${state.chapter !== 'tape' ? btn('Підказка', 'hint', '', 'text-button') : ''}${btn('Як це працює', 'knowledge', '', 'text-button')}${btn('Оглянути речі', 'explore', '', 'text-button')}</div>`; }
   function moveCard(index, to, focusDirection = '1') {
     if (to < 0 || to >= tapeOrder.length || to === index) return;
     const id = tapeOrder[index]; tapeOrder.splice(index, 1); tapeOrder.splice(to, 0, id);
@@ -139,6 +174,7 @@
   }
   function showSettings() {
     openModal('Твій спосіб слухати', `<div class="settings-form"><label for="music-volume">Музика <output id="music-value">${Math.round(A.settings.music * 100)}%</output></label><input id="music-volume" type="range" min="0" max="100" value="${Math.round(A.settings.music * 100)}"><label for="effects-volume">Ефекти <output id="effects-value">${Math.round(A.settings.effects * 100)}%</output></label><input id="effects-volume" type="range" min="0" max="100" value="${Math.round(A.settings.effects * 100)}"><label class="checkbox-label"><input id="muted" type="checkbox" ${A.settings.muted ? 'checked' : ''}> Вимкнути весь звук</label><label class="checkbox-label"><input id="motion" type="checkbox" ${reducedMotion ? 'checked' : ''}> Зменшити рух і переходи</label><p class="small">Усі завдання мають текстові підказки. Для керування використовуй Tab, Shift+Tab, Enter, Space; Escape закриває вікна.</p><p class="small">${storageWorks ? 'Прогрес автоматично зберігається в цьому браузері. Автономну копію та різні адреси браузер може зберігати окремо.' : 'Браузер не надає доступу до автозбереження. Експортуй файл, щоб повернутися до цього місця.'}</p><div class="save-actions">${btn('Зберегти у файл', 'export', '', 'secondary')}${btn('Завантажити з файлу', 'import', '', 'secondary')}</div></div>`, 'НАЛАШТУВАННЯ');
+    document.querySelector('.settings-form').insertAdjacentHTML('afterbegin', `<label for="text-size">Розмір тексту</label><select id="text-size"><option value="standard" ${textSize === 'standard' ? 'selected' : ''}>Зручний</option><option value="large" ${textSize === 'large' ? 'selected' : ''}>Ще більший</option></select>`);
   }
   function startNew() {
     if (saved && !(saved.chapter === 'prologue' && !Object.keys(saved.seen).length)) {
@@ -147,19 +183,31 @@
   }
   function newGame() {
     if (modal.open) modal.close();
-    state = E.initialState(unlocked); tapeOrder = ['meeting', 'unsaid', 'road']; disc = 'other'; device = 'player';
-    A.unlock(); persist(); renderGame(); document.querySelector('#scene-heading').focus();
+    state = E.initialState(unlocked); inspection = null; tapeOrder = ['meeting', 'unsaid', 'road']; disc = 'other'; device = 'player'; discStage = 'disc';
+    A.unlock(); persist(); renderGame(); focusDialogue();
   }
   const actions = {
     new: startNew, 'confirm-new': newGame, close: closeModal,
-    continue: () => { state = saved; A.unlock(); renderGame(); document.querySelector('#scene-heading').focus(); },
+    continue: () => { state = saved; inspection = null; A.unlock(); renderGame(); focusDialogue(); },
+    'next-line': advanceDialogue,
+    'previous-line': () => { const p = F.presentation(state, S); state = { ...state, presentation: { key: p.key, cursor: Math.max(0, p.cursor - 1), activity: p.activity } }; persist(); renderGame(); focusDialogue(); },
+    'start-puzzle': () => { state = F.startPuzzle(state, S); persist(); renderGame(); focusDialogue(); },
+    explore: () => { state = F.explore(state, S); persist(); renderGame(); focusDialogue(); },
+    retry: () => dispatch('dismissFeedback'),
+    'inspection-next': () => {
+      if (!inspection) return;
+      if (inspection.cursor === inspection.lines.length - 1) return finishInspection();
+      inspection.cursor++; renderGame(); focusDialogue();
+    },
     enter: () => dispatch('enter'), vinyl: v => { A.effect('click'); dispatch('vinyl', v); },
-    choice: v => dispatch('choice', v), restore: () => { const text = S.chapters[state.chapter].transition; A.effect('paper'); dispatch('restore'); openModal('Спогад залишається', `<p>${esc(text)}</p>`, 'ПЕРЕХІД'); },
+    choice: v => dispatch('choice', v), restore: () => { A.effect('paper'); discStage = 'disc'; dispatch('restore'); },
     'check-tape': () => { A.effect('rewind'); dispatch('tape', tapeOrder); },
-    'check-disc': () => { A.effect('click'); dispatch('disc', [disc, device]); },
+    'pick-disc': v => { if (!['other', 'mp3', 'audio'].includes(v)) return; disc = v; discStage = 'device'; renderGame(); focusDialogue(); },
+    'pick-device': v => { if (!['player', 'computer'].includes(v)) return; device = v; A.effect('click'); dispatch('disc', [disc, device]); },
+    'change-disc': () => { discStage = 'disc'; renderGame(); focusDialogue(); },
     ending: v => dispatch('ending', v), backToFinale: () => dispatch('backToFinale'),
-    hint: () => openModal('Нитка спогаду', `<p>${S.chapters[state.chapter].hint}</p>`, 'ПІДКАЗКА'),
-    knowledge: () => openModal('Як це працює', `<p>${S.chapters[state.chapter].knowledge}</p>`, 'ПРО НОСІЙ'),
+    hint: () => inspectText(S.chapters[state.chapter].person, S.chapters[state.chapter].hint),
+    knowledge: () => inspectText('Про носій', S.chapters[state.chapter].knowledge),
     journal: showJournal, endings: showEndings, credits,
     about: () => openModal('Музика залишається', '<p>Інтерактивна історія про те, як час, кімната й спосіб слухання змінюють наше сприйняття музики.</p><p>Після збою мережі студентка знаходить коробку з носіями. Через речі й записки ти допоможеш відновити три історії. Це образна реконструкція спогадів.</p><p>У грі немає прихованої оцінки твоїх рішень. Помилки дають повторну спробу. Останній вибір визначає фінал.</p><p class="notice">Робоча версія: популярні музичні записи, портрети та фінальне мультимедійне оформлення ще готуються.</p>' + btn('Титри й матеріали', 'credits', '', 'secondary'), 'ПРО ПРОЄКТ'),
     export: () => {
@@ -174,30 +222,38 @@
     const objectButton = e.target.closest('[data-object]');
     if (objectButton && mode === 'game') {
       const id = objectButton.dataset.object, obj = S.chapters[state.chapter].objects.find(o => o.id === id);
-      A.unlock(); A.effect('paper'); dispatch('inspect', id);
-      openModal(obj.label, `<p>${esc(obj.text)}</p>`, 'ЗНАЙДЕНИЙ ПРЕДМЕТ', main.querySelector(`[data-object="${id}"]`)); return;
+      if (!obj) return;
+      A.unlock(); state = E.reduce(state, { type: 'inspect', value: id }); persist();
+      inspectText(obj.label, obj.text, id); return;
     }
     const move = e.target.closest('[data-move]');
     if (move) { moveCard(Number(move.dataset.move), Number(move.dataset.move) + Number(move.dataset.direction), move.dataset.direction); return; }
     const button = e.target.closest('[data-action]');
     if (button && Object.hasOwn(actions, button.dataset.action)) { A.unlock(); actions[button.dataset.action](button.dataset.value); }
   });
-  main.addEventListener('change', e => { if (e.target.id === 'disc') disc = e.target.value; if (e.target.id === 'device') device = e.target.value; });
   modal.addEventListener('input', e => {
     const id = e.target.id;
     if (id === 'music-volume' || id === 'effects-volume') {
       const kind = id.split('-')[0]; A.settings[kind] = Number(e.target.value) / 100; document.querySelector(`#${kind}-value`).textContent = `${e.target.value}%`;
     } else if (id === 'muted') A.settings.muted = e.target.checked;
     else if (id === 'motion') { reducedMotion = e.target.checked; document.body.classList.toggle('reduce-motion', reducedMotion); }
+    else if (id === 'text-size') { textSize = e.target.value === 'large' ? 'large' : 'standard'; document.body.dataset.textSize = textSize; }
     else return;
-    A.unlock(); A.apply(); write(SETTINGS, JSON.stringify({ ...A.settings, motion: reducedMotion }));
+    A.unlock(); A.apply(); write(SETTINGS, JSON.stringify({ ...A.settings, motion: reducedMotion, textSize }));
   });
   document.querySelector('#import-save').addEventListener('change', async e => {
     const file = e.target.files[0]; e.target.value = '';
     if (!file) return;
     const imported = file.size < 100000 ? E.parseSave(await file.text()) : null;
     if (!imported) return openModal('Файл не підходить', '<p>Це не збереження цієї гри або файл пошкоджений. Поточний прогрес залишився на місці.</p>', 'ЗБЕРЕЖЕННЯ');
-    state = imported; if (modal.open) modal.close(); persist(); renderGame(); document.querySelector('#scene-heading').focus();
+    state = imported; inspection = null; discStage = 'disc'; if (modal.open) modal.close(); persist(); renderGame(); focusDialogue();
+  });
+  document.addEventListener('keydown', e => {
+    if (mode !== 'game' || modal.open || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (e.key === 'Escape' && inspection) { finishInspection(); return; }
+    if (!['Enter', ' '].includes(e.key) || !['BODY', 'MAIN', 'P', 'H1'].includes(e.target.tagName)) return;
+    const next = main.querySelector('.dialogue-next');
+    if (next) { e.preventDefault(); next.click(); }
   });
   document.querySelector('#journal').addEventListener('click', showJournal);
   document.querySelector('#settings').addEventListener('click', showSettings);

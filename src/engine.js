@@ -28,6 +28,8 @@
     const s = JSON.parse(JSON.stringify(state));
     const value = action.value;
     switch (action.type) {
+      case 'dismissFeedback':
+        s.feedback = ''; return s;
       case 'inspect':
         if (!objects[s.chapter].includes(value)) return state;
         s.seen[s.chapter] = [...new Set([...(s.seen[s.chapter] || []), value])];
@@ -95,7 +97,11 @@
       if (s.phase === 'loss' && !choices[s.chapter]?.includes(s.choices[s.chapter])) return null;
       if (s.chapter === 'vinyl' && ((s.phase === 'explore' && s.step >= 5) || (s.phase !== 'explore' && s.step !== 5))) return null;
       if (s.chapter !== 'vinyl' && s.step !== 0) return null;
-      return { version: 1, chapter: s.chapter, phase: s.phase, step: s.step, choices: { ...s.choices }, seen: s.seen, unlocked: [...new Set(s.unlocked)], ending: s.ending, feedback: s.feedback };
+      const clean = { version: 1, chapter: s.chapter, phase: s.phase, step: s.step, choices: { ...s.choices }, seen: s.seen, unlocked: [...new Set(s.unlocked)], ending: s.ending, feedback: s.feedback };
+      if (s.presentation && typeof s.presentation.key === 'string' && s.presentation.key.length <= 100 && Number.isInteger(s.presentation.cursor) && s.presentation.cursor >= 0 && s.presentation.cursor <= 200 && ['explore', 'puzzle'].includes(s.presentation.activity)) {
+        clean.presentation = { key: s.presentation.key, cursor: s.presentation.cursor, activity: s.presentation.activity };
+      }
+      return clean;
     } catch { return null; }
   }
   return { initialState, reduce, serialize, parseSave };
