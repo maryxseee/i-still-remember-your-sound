@@ -15,9 +15,9 @@ test('heroine mood is sad for an error, happy for a correct result, neutral at t
  const start=E.initialState();assert.equal(V.heroineMood(start),'neutral');
  let s=E.reduce(start,{type:'enter'});
  s=E.reduce(s,{type:'vinyl',value:'surface'});assert.equal(V.heroineMood(s),'sad');
- assert.match(V.render(s),/heroine-sad\.png/);
+ assert.match(V.render(s),/heroine-vinyl-sad\.png/);
  s=E.reduce(s,{type:'vinyl',value:'edges'});assert.equal(V.heroineMood(s),'happy');
- assert.match(V.render(s),/heroine-happy\.png/);
+ assert.match(V.render(s),/heroine-vinyl-happy\.png/);
 });
 test('memory transitions do not run for dialogue advances or ordinary puzzle steps',()=>{
  const s=E.initialState();

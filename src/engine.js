@@ -108,5 +108,10 @@
       return clean;
     } catch { return null; }
   }
-  return { initialState, reduce, serialize, parseSave };
+  function photos(state) {
+    if (!state) return [];
+    const index = chapters.indexOf(state.chapter);
+    return ['vinyl','tape','cd'].filter(id => chapters.indexOf(id) < index || (id === state.chapter && state.phase === 'loss'));
+  }
+  return { initialState, reduce, serialize, parseSave, photos };
 });

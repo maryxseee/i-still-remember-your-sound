@@ -16,6 +16,7 @@
   function apply() {
     if (master && context) master.gain.setTargetAtTime(settings.muted ? 0 : settings.effects, context.currentTime, 0.05);
     if (currentTrack) currentTrack.volume = settings.muted ? 0 : settings.music;
+    window.GameMusic?.apply();
   }
   function effect(kind = 'click') {
     if (!context || context.state !== 'running' || settings.muted) return;

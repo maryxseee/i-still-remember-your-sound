@@ -13,11 +13,13 @@
   <link rel="stylesheet" href="novel.css">
   <link rel="stylesheet" href="characters.css">
   <link rel="stylesheet" href="stage.css">
+  <link rel="stylesheet" href="memories.css">
   <script defer src="src/engine.js"></script>
   <script defer src="src/story.js"></script>
   <script defer src="src/flow.js"></script>
   <script defer src="src/visual.js"></script>
   <script defer src="src/audio.js"></script>
+  <script defer src="src/music.js"></script>
   <script defer src="src/app.js"></script>
 </head>
 <body>
@@ -29,6 +31,7 @@
       <nav aria-label="Інструменти"><button id="journal" class="quiet">Щоденник <span aria-hidden="true">↗</span></button><button id="settings" class="quiet">Налаштування</button><button id="menu" class="icon-button" aria-label="Головне меню">☰</button></nav>
     </header>
     <main id="main" tabindex="-1"></main>
+    <section id="music-panel" class="music-panel" aria-labelledby="music-title" hidden><p class="eyebrow">ЗВУК ЦЬОГО СПОГАДУ</p><h2 id="music-title"></h2><p id="music-message" role="status"></p><div class="music-actions"><button id="enable-online" class="secondary">Слухати онлайн</button><button id="choose-music" class="quiet">Вибрати свій аудіофайл</button><a id="music-link" target="_blank" rel="noopener noreferrer">Офіційне відео ↗</a></div><div id="online-music"></div><audio id="local-music" controls hidden></audio><input id="music-file" type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a" hidden></section>
     <footer class="footer"><span id="save-status" role="status">Три носії. Три історії. Один вечір.</span><span>Наведи, щоб знайти. Натисни, щоб згадати.</span></footer>
   </div>
   <dialog id="modal" aria-labelledby="modal-title"><div class="modal-header"><span class="eyebrow" id="modal-kicker">ЗАПИС</span><button id="close-modal" class="icon-button" aria-label="Закрити вікно">×</button></div><h2 id="modal-title"></h2><div id="modal-content"></div></dialog>

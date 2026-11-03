@@ -10,11 +10,13 @@
   }
   function characterFile(id,s) {
     const mood=heroineMood(s);
-    return id==='heroine'&&mood!=='neutral'?`heroine-${mood}.png`:characters[id].file;
+    if(id!=='heroine')return characters[id].file;
+    const era=['vinyl','tape','cd'].includes(s?.chapter)?`-${s.chapter}`:'';
+    return `heroine${era}${mood==='neutral'?'':`-${mood}`}.png`;
   }
   function transitionKind(previous,next) {
     if(previous.chapter!==next.chapter)return 'memory';
-    if(previous.phase!==next.phase&&['loss','ended'].includes(next.phase))return 'fade';
+    if(previous.phase!==next.phase&&['choice','loss','ended'].includes(next.phase))return 'fade';
     return 'none';
   }
   function describe(s,ctx={}){
@@ -55,7 +57,7 @@
     return s.chapter==='vinyl'?vinyl(v,ctx.event||''):s.chapter==='tape'?tape(v):s.chapter==='cd'?cd(v):box(v,ctx);
   }
   function render(s,ctx={}){
-    return cast(s,ctx);
+    return ctx.social?'':cast(s,ctx);
   }
   return {characters,speakerCharacter,heroineMood,characterFile,transitionKind,describe,render,mechanism,avatar};
 });
