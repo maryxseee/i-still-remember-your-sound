@@ -3,6 +3,20 @@
   const characters={heroine:{name:'Головна героїня',file:'heroine.png'},rebecca:{name:'Ребекка',file:'rebecca.png'},johnny:{name:'Джоні',file:'johnny.png'},angela:{name:'Анжела',file:'angela.png'}};
   const guests={vinyl:'rebecca',tape:'johnny',cd:'angela'};
   function speakerCharacter(speaker){return ({'Ребекка':'rebecca','Джоні':'johnny','Анжела':'angela','Твоя думка':'heroine','Твоя історія':'heroine'})[speaker]||null;}
+  function heroineMood(s) {
+    if(s?.feedback)return 'sad';
+    if(s&&(['choice','ended'].includes(s.phase)||(s.chapter==='vinyl'&&s.step>0&&s.phase==='explore')))return 'happy';
+    return 'neutral';
+  }
+  function characterFile(id,s) {
+    const mood=heroineMood(s);
+    return id==='heroine'&&mood!=='neutral'?`heroine-${mood}.png`:characters[id].file;
+  }
+  function transitionKind(previous,next) {
+    if(previous.chapter!==next.chapter)return 'memory';
+    if(previous.phase!==next.phase&&['loss','ended'].includes(next.phase))return 'fade';
+    return 'none';
+  }
   function describe(s,ctx={}){
     const lost=ctx.lost===true, playing=!lost&&['choice','loss'].includes(s.phase);
     const solved=['choice','loss'].includes(s.phase);
@@ -10,10 +24,10 @@
     return {chapter:s.chapter,record:lost?'missing':s.step===0?'sleeve':s.step<3?'held':'platter',dust:!lost&&s.step<2,speed:s.step>=4?'33⅓':'45',spinning:s.chapter==='vinyl'&&playing,arm:s.step>=5&&!lost?'down':'rest',error:Boolean(s.feedback),boxOpen:(s.seen.prologue||[]).includes('box')||(s.seen.prologue||[]).includes('note'),order:s.chapter==='tape'&&solved?['road','meeting','unsaid']:(ctx.order||['meeting','unsaid','road']),disc:media.disc,device:media.device,discInserted:s.chapter==='cd'&&playing,discSelected:ctx.discStage==='device',playing,lost,ending:s.ending||null};
   }
   const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  function cast(chapter,speaker){
-    return `<div class="scene-cast">${['heroine',guests[chapter]].filter(Boolean).map(id=>`<button class="character character-${id} ${speakerCharacter(speaker)===id?'speaking':''}" data-character="${id}" aria-label="Оглянути персонажа: ${characters[id].name}"><img src="assets/characters/${characters[id].file}" alt="${characters[id].name}"></button>`).join('')}</div>`;
+  function cast(s,ctx){
+    return `<div class="scene-cast">${['heroine',guests[s.chapter]].filter(Boolean).map(id=>`<button class="character character-${id} ${speakerCharacter(ctx.speaker)===id?'speaking':''} ${speakerCharacter(ctx.speaker)===id&&ctx.speakerChanged?'speaker-arriving':''}" data-character="${id}" data-mood="${id==='heroine'?heroineMood(s):'neutral'}" aria-label="Оглянути персонажа: ${characters[id].name}"><img src="assets/characters/${characterFile(id,s)}" alt="${characters[id].name}"></button>`).join('')}</div>`;
   }
-  function avatar(speaker){const id=speakerCharacter(speaker);return id?`<span class="speaker-avatar" aria-hidden="true"><img src="assets/characters/${characters[id].file}" alt=""></span>`:'';}
+  function avatar(speaker,s){const id=speakerCharacter(speaker);return id?`<span class="speaker-avatar" aria-hidden="true"><img src="assets/characters/${characterFile(id,s)}" alt=""></span>`:'';}
   const svg=(body,label,classes='')=>`<svg class="mechanism ${classes}" viewBox="0 0 520 350" role="img" aria-label="${escape(label)}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="wood" x2="0" y2="1"><stop stop-color="#a16e43"/><stop offset="1" stop-color="#573923"/></linearGradient><radialGradient id="disc-sheen"><stop stop-color="#faf5d8"/><stop offset=".35" stop-color="#a9d3d1"/><stop offset=".6" stop-color="#c5aecb"/><stop offset=".8" stop-color="#f3dab0"/><stop offset="1" stop-color="#8dadb0"/></radialGradient></defs>${body}</svg>`;
   function vinyl(v,event){
     const descriptions={sleeve:'Платівка ще в конверті',held:v.dust?'Платівка у руках, на ній є пил':'Платівка очищена від пилу',platter:v.spinning?'Платівка обертається, тонарм опущено':`Платівка на програвачі, швидкість ${v.speed} об/хв`,missing:'Платівки немає, програвач мовчить'};
@@ -41,10 +55,7 @@
     return s.chapter==='vinyl'?vinyl(v,ctx.event||''):s.chapter==='tape'?tape(v):s.chapter==='cd'?cd(v):box(v,ctx);
   }
   function render(s,ctx={}){
-    const v=describe(s,ctx),event=ctx.event||'';
-    const device=mechanism(s,ctx);
-    const end=v.ending?`<div class="ending-props ending-${v.ending}" aria-label="${{home:'Особиста колекція: носії та листи',together:'Спільний вечір: дві чашки й запрошення',archive:'Архів: підписані носії та каталог'}[v.ending]}">${{home:'◎ ▣ ◉',together:'☕ ♫ ☕',archive:'▤ ◎ ▣ ◉'}[v.ending]}</div>`:'';
-    return `${cast(s.chapter,ctx.speaker)}${ctx.inlineDevice?'':`<div class="action-stage ${v.error?'device-error':''} ${v.lost?'medium-lost':''} action-${event}" data-record="${v.record}" data-speed="${v.speed}" data-spinning="${v.spinning}" data-box-open="${v.boxOpen}">${device}</div>`}${end}${ctx.inspected?`<div class="inspected-label">${escape(ctx.inspectionLabel||'Предмет знайдено')}</div>`:''}`;
+    return cast(s,ctx);
   }
-  return {characters,speakerCharacter,describe,render,mechanism,avatar};
+  return {characters,speakerCharacter,heroineMood,characterFile,transitionKind,describe,render,mechanism,avatar};
 });

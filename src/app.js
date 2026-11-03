@@ -1,13 +1,14 @@
 (function () {
   'use strict';
   const E = window.GameEngine, S = window.GameStory, A = window.GameAudio, F = window.GameFlow, V = window.GameVisual;
-  const main = document.querySelector('#main'), modal = document.querySelector('#modal');
+  const main = document.querySelector('#main'), modal = document.querySelector('#modal'), interaction = document.querySelector('#interaction-modal');
   const SAVE = 'isrys.save.v1', ENDS = 'isrys.endings.v1', SETTINGS = 'isrys.settings.v1';
   let storageWorks = true, saveWarning = '', mode = 'menu', opener = null;
   let tapeOrder = ['meeting', 'unsaid', 'road'], disc = 'other', device = 'player', dragging = null;
   let inspection = null, discStage = 'disc', textSize = 'standard';
   let visualEvent = '', inspectedObject = '';
   let visualContext = {};
+  let interactionKind = null, interactionComplete = false, renderingInteraction = false, lastSpeaker = null, transitionTimer;
   let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function read(key) { try { return localStorage.getItem(key); } catch { storageWorks = false; return null; } }
   function write(key, value) { try { localStorage.setItem(key, value); return true; } catch { storageWorks = false; return false; } }
@@ -52,32 +53,73 @@
     const focusedValue = focused?.dataset?.value;
     state = E.reduce(state, { type, value });
     if (state === previous) return;
+    if (interactionKind === 'puzzle' && previous.phase === 'explore' && state.phase === 'choice') interactionComplete = true;
+    if (previous.chapter !== state.chapter) { interactionKind = null; interactionComplete = false; }
     if (previous.chapter !== state.chapter) inspectedObject = '';
     visualEvent = type === 'vinyl' && state.step > previous.step ? ({ edges:'lift', clean:'clean', place:'place', '33':'speed', play:'play' }[value] || '') : type === 'disc' && state.phase === 'choice' ? 'disc-play' : state.feedback ? 'error' : '';
     inspection = null;
     persist(); renderGame();
+    runTransition(V.transitionKind(previous,state));
     if (state.feedback || previous.chapter !== state.chapter || previous.phase !== state.phase || previous.step !== state.step) focusDialogue();
     if (previous.chapter === state.chapter && previous.phase === state.phase && focusedAction) {
-      const replacement = [...main.querySelectorAll('[data-action]')].find(node => node.dataset.action === focusedAction && node.dataset.value === focusedValue);
-      if (!state.feedback) (replacement || main.querySelector('.dialogue-next, .puzzle button:not(:disabled)'))?.focus();
+      const surface=activeSurface();
+      const replacement = [...surface.querySelectorAll('[data-action]')].find(node => node.dataset.action === focusedAction && node.dataset.value === focusedValue);
+      if (!state.feedback) (replacement || surface.querySelector('.dialogue-next, .puzzle button:not(:disabled)'))?.focus();
     }
   }
   function focusDialogue(reveal = false) {
-    const text = document.querySelector('#dialogue-text');
+    const text = interaction.open ? document.querySelector('#interaction-text') : document.querySelector('#dialogue-text');
     if (text) { text.focus({preventScroll: !reveal}); announce(text.textContent); }
-    else main.querySelector('.story-panel button')?.focus();
+    else activeSurface().querySelector('.story-panel button, [data-action]')?.focus();
   }
+  function activeSurface() { return interaction.open ? interaction : main; }
+  function runTransition(kind) {
+    if(kind==='none')return;
+    clearTimeout(transitionTimer);
+    const overlay=document.querySelector('#scene-transition');
+    overlay.className='scene-transition';
+    void overlay.offsetWidth;
+    overlay.classList.add(reducedMotion?'soft-transition':`transition-${kind}`);
+    const picture=main.querySelector('.scene-image');
+    if(kind==='memory'&&!reducedMotion)picture?.classList.add('memory-arrival');
+    transitionTimer=setTimeout(()=>{overlay.className='scene-transition';picture?.classList.remove('memory-arrival');},reducedMotion?360:1000);
+  }
+  function syncInteraction(c,view,beats) {
+    if(!interactionKind) { if(interaction.open)interaction.close();document.querySelector('#interaction-content').innerHTML=''; return; }
+    const labels={prologue:'Коробка зі спогадами',vinyl:'Підготуй програвач',tape:'Касетне послання',cd:'Знайди сумісний запис'};
+    document.querySelector('#interaction-title').textContent=inspection?inspection.speaker:(labels[state.chapter]||'Взаємодія');
+    renderingInteraction=true;
+    const mood=V.heroineMood(state);
+    const reaction=`<div class="hero-reaction" data-mood="${mood}"><span class="speaker-avatar"><img src="assets/characters/${V.characterFile('heroine',state)}" alt="Героїня: ${{neutral:'зосереджена',sad:'засмучена після помилки',happy:'радіє успіху'}[mood]}"></span><span>${mood==='sad'?'Спробуємо ще раз':mood==='happy'?'Вийшло!':'Твоя дія'}</span></div>`;
+    document.querySelector('#interaction-content').innerHTML=reaction+(interactionComplete&&!inspection
+      ?speech(c.person,c.success,btn('Готово — повернутися до історії','complete-interaction','','primary dialogue-next'))
+      :panel(c,view,beats,true));
+    renderingInteraction=false;
+    if(!interaction.open)interaction.showModal();
+  }
+  function closeInteraction() {
+    const id=inspection?.returnId;
+    if(interactionComplete&&state.phase==='choice') { state=F.advance(state,S); persist(); }
+    interactionKind=null;interactionComplete=false;inspection=null;inspectedObject='';
+    if(interaction.open)interaction.close();
+    renderGame();
+    const target=id?main.querySelector(`[data-object="${id}"]`):main.querySelector('[data-action="open-interaction"]');
+    if(target)target.focus();else focusDialogue();
+  }
+  interaction.addEventListener('cancel',e=>{e.preventDefault();if(inspection&&interactionKind==='puzzle')finishInspection();else closeInteraction();});
   function advanceDialogue() {
     state = F.advance(state, S); persist(); renderGame(); focusDialogue();
   }
   function inspectText(speaker, text, returnId = '') {
     inspection = { speaker, lines: F.split(text), cursor: 0, returnId };
+    if(!interactionKind)interactionKind='inspection';
     A.effect('paper'); renderGame(); focusDialogue(true);
   }
   function finishInspection() {
+    if(interactionKind==='inspection')return closeInteraction();
     const id = inspection?.returnId;
     inspection = null; renderGame();
-    const object = id ? main.querySelector(`[data-object="${id}"]`) : null;
+    const object = id ? activeSurface().querySelector(`[data-object="${id}"]`) : null;
     if (object) object.focus(); else focusDialogue();
   }
   function openModal(title, html, kicker = 'ЗАПИС', returnTo) {
@@ -93,6 +135,8 @@
   document.querySelector('#close-modal').addEventListener('click', closeModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
   function renderMenu() {
+    interactionKind=null;interactionComplete=false;if(interaction.open)interaction.close();
+    document.querySelector('#interaction-content').innerHTML='';
     mode = 'menu'; inspection = null; A.stop(); document.body.dataset.chapter = 'prologue';
     main.innerHTML = `<section class="menu-hero"><img class="scene-image" src="assets/scenes/prologue.png" alt="Вечірня кімната: на освітленому лампою столі коробка з платівкою, касетою й CD, навушники та телефон."><div class="hero-shade"></div><img class="menu-character" src="assets/characters/heroine.png" alt="Головна героїня: золотаві кучері, веснянки, зіпка й беггі-джинси"><div class="menu-copy"><p class="eyebrow">ПРО МУЗИКУ, ЯКА ЗАЛИШАЄТЬСЯ</p><h1 id="menu-heading" tabindex="-1">I still remember<br><em>your sound</em><span class="title-period">.</span></h1><p class="menu-description">Іноді, щоб знову почути музику,<br>потрібно відкрити стару коробку.</p><div class="menu-actions">${btn('Почати історію <span aria-hidden="true">→</span>', 'new', '', 'primary')}${saved ? btn('Продовжити <span aria-hidden="true">↗</span>', 'continue', '', 'secondary') : ''}</div><div class="menu-links">${btn(`Відкриті фінали <span class="count">${unlocked.length}/3</span>`, 'endings', '', 'text-button')}${btn('Про проєкт', 'about', '', 'text-button')}</div>${saveWarning ? `<p class="notice">${esc(saveWarning)}</p>` : ''}<p class="menu-meta">10–15 ХВИЛИН <span>·</span> МИША АБО КЛАВІАТУРА <span>·</span> МОЖНА БЕЗ ЗВУКУ</p></div><div class="hero-caption"><span class="tiny-disc" aria-hidden="true"></span><span>Деякі спогади<br>мають власне звучання.</span></div></section><div class="chapter-preview"><span class="eyebrow">УСЕРЕДИНІ КОРОБКИ</span><span><b>01</b> Платівка <i>кінець 1970-х</i></span><span><b>02</b> Касета <i>1990-ті</i></span><span><b>03</b> Компакт-диск <i>початок 2000-х</i></span></div>`;
     status();
@@ -107,20 +151,25 @@
     const view = F.presentation(state, S), beats = F.sequence(state, S);
     const loss = state.phase === 'loss' && !view.ready && beats[view.cursor].dim, ended = state.phase === 'ended';
     const explorable = state.phase === 'explore' && view.ready && view.activity === 'explore' && !inspection && !state.feedback;
-    const currentSpeaker = inspection ? c.person : state.feedback ? c.person : !view.ready ? beats[view.cursor].speaker : c.person;
-    visualContext = {speaker:currentSpeaker,lost:loss,event:visualEvent,order:tapeOrder,disc,device,discStage,inspected:inspection?.returnId||inspectedObject,inspectionLabel:c.objects.find(o=>o.id===(inspection?.returnId||inspectedObject))?.label,inlineDevice:Boolean(inspection)||view.activity==='puzzle'||['choice','loss'].includes(state.phase)};
+    const currentSpeaker = inspection ? 'Твоя думка' : state.feedback ? c.person : !view.ready ? beats[view.cursor].speaker : c.person;
+    const currentId=V.speakerCharacter(currentSpeaker);
+    visualContext = {speaker:currentSpeaker,speakerChanged:currentId!==lastSpeaker,lost:loss,event:visualEvent,order:tapeOrder,disc,device,discStage,inspected:inspection?.returnId||inspectedObject,inspectionLabel:c.objects.find(o=>o.id===(inspection?.returnId||inspectedObject))?.label};
+    lastSpeaker=currentId;
     document.body.dataset.chapter = state.chapter;
     main.innerHTML = `<section class="game"><div class="scene-top"><div><p class="eyebrow">${c.number}</p><h1 id="scene-heading" tabindex="-1">${esc(ended ? S.endings[state.ending].title : c.title)}</h1><p class="era">${c.era}</p></div><ol class="timeline" aria-label="Розділи історії">${chapters.map((key, i) => `<li class="${key === state.chapter ? 'current' : chapters.indexOf(state.chapter) > i ? 'done' : ''}" ${key === state.chapter ? 'aria-current="step"' : ''}><span>${i === 0 ? '○' : i === 4 ? '✧' : '0' + i}</span><span class="sr-only">${S.chapters[key].title}</span></li>`).join('')}</ol></div><div class="scene-layout"><div class="scene-window ${loss ? 'loss' : ''}"><img class="scene-image" src="assets/scenes/${gameMedia(state.chapter)}.png" alt="${esc(c.era)} — мальована локація з предметами історії."><div class="scene-vignette"></div>${V.render(state,visualContext)}${explorable ? `<div class="hotspots" aria-label="Предмети у кімнаті">${c.objects.map(o => `<button data-object="${o.id}" class="hotspot ${(state.seen[state.chapter] || []).includes(o.id) ? 'seen' : ''}" style="--x:${o.x}%;--y:${o.y}%" aria-label="Оглянути: ${esc(o.label)}"><span aria-hidden="true">${(state.seen[state.chapter] || []).includes(o.id) ? '✓' : '+'}</span><span class="hotspot-label">${esc(o.label)}</span></button>`).join('')}</div>` : ''}<div class="scene-caption"><span class="sound-dot" aria-hidden="true"></span>${loss ? 'Якби носія не залишилося' : ended ? 'Твоя історія триває' : explorable ? 'Обери предмет на сцені або під діалогом.' : c.era}</div></div><aside class="story-panel" aria-label="Історія та дії">${panel(c, view, beats)}</aside></div>${explorable ? `<section class="object-shelf" aria-label="Огляд предметів"><span class="eyebrow">ОГЛЯНУТИ РЕЧІ</span><div>${c.objects.map(o => `<button data-object="${o.id}" class="object-button"><span aria-hidden="true">${(state.seen[state.chapter] || []).includes(o.id) ? '✓' : '+'}</span>${esc(o.label)}</button>`).join('')}</div><span class="discovered">${(state.seen[state.chapter] || []).length}/${c.objects.length} оглянуто</span></section>` : ''}<p class="audio-note" id="music-note"></p></section>`;
     A.scene(state.chapter, state.phase === 'choice', loss); musicStatus(); status();
+    syncInteraction(c,view,beats);
     wireDrag();
     visualEvent = '';
   }
   function speech(speaker, text, controls, meta = '') {
     const v=V.describe(state,visualContext);
-    const device=visualContext.inlineDevice?`<div class="inline-mechanism ${v.error?'device-error':''} ${v.lost?'medium-lost':''} action-${visualContext.event}" data-record="${v.record}" data-speed="${v.speed}" data-spinning="${v.spinning}" data-box-open="${v.boxOpen}">${V.mechanism(state,visualContext)}</div>`:'';
-    return `<div class="dialogue-heading"><div class="speaker-identity">${V.avatar(speaker)}<p class="speaker">${esc(speaker)}</p></div>${meta ? `<span class="dialogue-progress">${esc(meta)}</span>` : ''}</div><div class="dialogue-body ${device?'with-device':''}"><p id="dialogue-text" class="dialogue-text" tabindex="-1">${esc(text)}</p>${device}</div><div class="dialogue-controls">${controls}</div>`;
+    const device=renderingInteraction?`<div class="inline-mechanism ${v.error?'device-error':''} ${v.lost?'medium-lost':''} action-${visualContext.event}" data-record="${v.record}" data-speed="${v.speed}" data-spinning="${v.spinning}" data-box-open="${v.boxOpen}">${V.mechanism(state,visualContext)}</div>`:'';
+    return `<div class="dialogue-heading"><div class="speaker-identity">${V.avatar(speaker,state)}<p class="speaker">${esc(speaker)}</p></div>${meta ? `<span class="dialogue-progress">${esc(meta)}</span>` : ''}</div><div class="dialogue-body ${device?'with-device':''}"><p id="${renderingInteraction?'interaction-text':'dialogue-text'}" class="dialogue-text" tabindex="-1">${esc(text)}</p>${device}</div><div class="dialogue-controls">${controls}</div>`;
   }
-  function panel(c, view, beats) {
+  function panel(c, view, beats, insideInteraction=false) {
+    if(!insideInteraction&&inspection)return speech('Твоя думка','Роздивімося цю річ ближче.',btn('Повернутися до огляду','open-interaction','','primary'));
+    if(!insideInteraction&&state.phase==='explore'&&view.activity==='puzzle')return speech(c.person,'Завдання можна продовжити в окремому вікні. Твій поточний крок збережено.',btn('Повернутися до завдання','open-interaction','','primary'));
     if (inspection) {
       const last = inspection.cursor === inspection.lines.length - 1;
       return speech(inspection.speaker, inspection.lines[inspection.cursor], btn(last ? 'Повернутися до сцени' : 'Далі →', 'inspection-next', '', 'primary dialogue-next'), `${inspection.cursor + 1} / ${inspection.lines.length}`);
@@ -160,11 +209,11 @@
     if (to < 0 || to >= tapeOrder.length || to === index) return;
     const id = tapeOrder[index]; tapeOrder.splice(index, 1); tapeOrder.splice(to, 0, id);
     A.effect('click'); renderGame();
-    const target = main.querySelector(`[data-move="${to}"][data-direction="${focusDirection}"]:not(:disabled)`) || main.querySelector(`[data-move="${to}"]:not(:disabled)`);
+    const target = activeSurface().querySelector(`[data-move="${to}"][data-direction="${focusDirection}"]:not(:disabled)`) || activeSurface().querySelector(`[data-move="${to}"]:not(:disabled)`);
     target?.focus(); announce(`${S.fragments[id].name}: позиція ${to + 1} з 3.`);
   }
   function wireDrag() {
-    main.querySelectorAll('[data-fragment]').forEach(card => {
+    activeSurface().querySelectorAll('[data-fragment]').forEach(card => {
       card.addEventListener('dragstart', e => { dragging = card.dataset.fragment; e.dataTransfer.setData('text/plain', dragging); e.dataTransfer.effectAllowed = 'move'; });
       card.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
       card.addEventListener('drop', e => { e.preventDefault(); const from = tapeOrder.indexOf(dragging), to = tapeOrder.indexOf(card.dataset.fragment); if (from >= 0) moveCard(from, to); dragging = null; });
@@ -192,16 +241,21 @@
   }
   function newGame() {
     if (modal.open) modal.close();
+    interactionKind=null;interactionComplete=false;lastSpeaker=null;
     state = E.initialState(unlocked); inspection = null; inspectedObject = ''; visualEvent = ''; tapeOrder = ['meeting', 'unsaid', 'road']; disc = 'other'; device = 'player'; discStage = 'disc';
     A.unlock(); persist(); renderGame(); focusDialogue(true);
   }
   const actions = {
     new: startNew, 'confirm-new': newGame, close: closeModal,
-    continue: () => { state = saved; inspection = null; A.unlock(); renderGame(); focusDialogue(true); },
+    continue: () => { state = saved; inspection = null; interactionComplete=false;interactionKind=state.phase==='explore'&&F.presentation(state,S).activity==='puzzle'?'puzzle':null; A.unlock(); renderGame(); focusDialogue(true); },
     'next-line': advanceDialogue,
     'previous-line': () => { const p = F.presentation(state, S); state = { ...state, presentation: { key: p.key, cursor: Math.max(0, p.cursor - 1), activity: p.activity } }; persist(); renderGame(); focusDialogue(); },
-    'start-puzzle': () => { state = F.startPuzzle(state, S); persist(); renderGame(); focusDialogue(); },
-    explore: () => { state = F.explore(state, S); persist(); renderGame(); focusDialogue(); },
+    'start-puzzle': () => { state = F.startPuzzle(state, S);interactionKind='puzzle';interactionComplete=false; persist(); renderGame(); focusDialogue(); },
+    'open-interaction': () => { interactionKind=inspection?'inspection':'puzzle';interactionComplete=state.phase==='choice';renderGame();focusDialogue(); },
+    'close-interaction':closeInteraction,
+    'complete-interaction':closeInteraction,
+    settings:showSettings,
+    explore: () => { interactionKind=null;interactionComplete=false;inspection=null;state = F.explore(state, S); persist(); renderGame(); focusDialogue(); },
     retry: () => dispatch('dismissFeedback'),
     'inspection-next': () => {
       if (!inspection) return;
@@ -231,7 +285,7 @@
     const character = e.target.closest('[data-character]');
     if (character && Object.hasOwn(V.characters,character.dataset.character)) {
       const person=V.characters[character.dataset.character];
-      openModal(person.name,`<img class="character-preview" src="assets/characters/${person.file}" alt="${person.name}">`,'ПЕРСОНАЖ');return;
+      openModal(person.name,`<img class="character-preview" src="assets/characters/${V.characterFile(character.dataset.character,state)}" alt="${person.name}">`,'ПЕРСОНАЖ');return;
     }
     const objectButton = e.target.closest('[data-object]');
     if (objectButton && mode === 'game') {
@@ -262,13 +316,13 @@
     if (!file) return;
     const imported = file.size < 100000 ? E.parseSave(await file.text()) : null;
     if (!imported) return openModal('Файл не підходить', '<p>Це не збереження цієї гри або файл пошкоджений. Поточний прогрес залишився на місці.</p>', 'ЗБЕРЕЖЕННЯ');
-    state = imported; inspection = null; inspectedObject = ''; visualEvent = ''; discStage = 'disc'; if (modal.open) modal.close(); persist(); renderGame(); focusDialogue();
+    state = imported; inspection = null; inspectedObject = ''; visualEvent = ''; discStage = 'disc';interactionComplete=false;interactionKind=state.phase==='explore'&&F.presentation(state,S).activity==='puzzle'?'puzzle':null; if (modal.open) modal.close(); persist(); renderGame(); focusDialogue();
   });
   document.addEventListener('keydown', e => {
     if (mode !== 'game' || modal.open || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
-    if (e.key === 'Escape' && inspection) { finishInspection(); return; }
+    if (e.key === 'Escape' && inspection) { e.preventDefault();finishInspection(); return; }
     if (!['Enter', ' '].includes(e.key) || !['BODY', 'MAIN', 'P', 'H1'].includes(e.target.tagName)) return;
-    const next = main.querySelector('.dialogue-next');
+    const next = activeSurface().querySelector('.dialogue-next');
     if (next) { e.preventDefault(); next.click(); }
   });
   document.querySelector('#journal').addEventListener('click', showJournal);
