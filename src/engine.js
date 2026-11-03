@@ -52,6 +52,7 @@
       case 'disc':
         if (s.chapter !== 'cd' || s.phase !== 'explore' || !Array.isArray(value)) return state;
         if ((value[0] === 'audio' && value[1] === 'player') || (value[0] === 'mp3' && value[1] === 'computer')) {
+          s.media = { cd: { disc: value[0], device: value[1] } };
           s.phase = 'choice'; s.feedback = ''; return s;
         }
         s.feedback = value[0] === 'mp3' && value[1] === 'player'
@@ -100,6 +101,9 @@
       const clean = { version: 1, chapter: s.chapter, phase: s.phase, step: s.step, choices: { ...s.choices }, seen: s.seen, unlocked: [...new Set(s.unlocked)], ending: s.ending, feedback: s.feedback };
       if (s.presentation && typeof s.presentation.key === 'string' && s.presentation.key.length <= 100 && Number.isInteger(s.presentation.cursor) && s.presentation.cursor >= 0 && s.presentation.cursor <= 200 && ['explore', 'puzzle'].includes(s.presentation.activity)) {
         clean.presentation = { key: s.presentation.key, cursor: s.presentation.cursor, activity: s.presentation.activity };
+      }
+      if (s.media?.cd && ((s.media.cd.disc === 'mp3' && s.media.cd.device === 'computer') || (s.media.cd.disc === 'audio' && s.media.cd.device === 'player'))) {
+        clean.media = { cd: { disc: s.media.cd.disc, device: s.media.cd.device } };
       }
       return clean;
     } catch { return null; }
