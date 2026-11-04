@@ -5,6 +5,7 @@
   const tracks = {}; // Add only cleared local recordings: chapter: 'assets/audio/filename.mp3'.
   let currentTrack = null, activeChapter = null, musicIssue = false;
   function unlock() {
+    window.GameMusic?.unlock();
     try {
       const Audio = window.AudioContext || window.webkitAudioContext;
       if (!Audio) return;

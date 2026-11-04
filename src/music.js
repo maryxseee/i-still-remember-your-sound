@@ -5,7 +5,7 @@
     tape:{title:'The Cranberries — Dreams',video:'Yam5uK6e-bQ'},
     cd:{title:'Coldplay — Clocks',video:'d020hcWA_Wg'}
   };
-  let chapter=null,eligible=false,player=null,ready=false,request=0,apiPromise,source=null,playerTimeout;
+  let chapter=null,eligible=false,player=null,ready=false,request=0,apiPromise,source=null,playerTimeout,armed=false;
   const local=new Map();
   const panel=()=>document.querySelector('#music-panel');
   const audio=()=>document.querySelector('#local-music');
@@ -19,11 +19,16 @@
   function clearPlayer(){request++;clearTimeout(playerTimeout);if(player){player.destroy();player=null;}ready=false;source=null;audio().pause();document.querySelector('#online-music').replaceChildren();}
   function stop(){clearPlayer();chapter=null;eligible=false;panel().hidden=true;}
   function pause(){audio().pause();if(ready&&player)player.pauseVideo();}
+  function unlock(){
+    armed=true;
+    loadAPI().catch(()=>{});
+    if(eligible&&!source)online();
+  }
   function scene(next,playing,lost){
     if(!tracks[next])return stop();
     const available=playing&&!lost;
     if(next!==chapter){
-      clearPlayer();chapter=next;eligible=available;panel().hidden=false;
+      clearPlayer();chapter=next;eligible=false;panel().hidden=false;
       document.querySelector('#music-title').textContent=tracks[next].title;
       const link=document.querySelector('#music-link');link.href=`https://www.youtube.com/watch?v=${tracks[next].video}`;
       audio().hidden=true;message('Музика відкриється після відновлення запису.');
@@ -31,10 +36,11 @@
     const becameAvailable=available&&!eligible;eligible=available;
     document.querySelector('#enable-online').disabled=!eligible;
     document.querySelector('#choose-music').disabled=!eligible;
-    if(!eligible){pause();audio().hidden=true;if(player){clearPlayer();}message(lost?'Носій зник — настала тиша.':'Віднови запис, щоб послухати цю композицію.');}
+    if(!eligible){pause();audio().hidden=true;if(player||source){clearPlayer();}message(lost?'Носій зник — настала тиша.':'Віднови запис, щоб послухати цю композицію.');}
     else if(becameAvailable||!source){
-      message('Запис відновлено. Увімкни офіційне відео або вибери свій аудіофайл.');
+      message('Запис відновлено. Музика починається автоматично.');
       if(local.has(chapter)&&(becameAvailable||source!=='local'))useLocal();
+      else if(armed&&!source)online();
     }
   }
   function loadAPI(){
@@ -53,9 +59,10 @@
     try{
       await loadAPI();if(token!==request||target!==chapter||!eligible)return;
       const slot=document.createElement('div');slot.id='youtube-player';document.querySelector('#online-music').append(slot);
-      playerTimeout=setTimeout(()=>{if(token===request&&!ready)message('Програвач не відповідає. Спробуй «Слухати онлайн» ще раз, відкрий офіційне відео або вибери локальний файл.');},15000);
-      player=new window.YT.Player(slot,{width:'100%',height:270,videoId:tracks[chapter].video,host:'https://www.youtube-nocookie.com',playerVars:{playsinline:1,origin:location.origin,autoplay:0},events:{
-        onReady:()=>{if(token!==request)return;clearTimeout(playerTimeout);ready=true;apply();message('Натисни ▶ у програвачі. Для онлайн-музики потрібен інтернет.');},
+      playerTimeout=setTimeout(()=>{if(token===request&&!ready)message('Програвач не відповідає. Натисни «Відновити музику», відкрий офіційне відео або вибери локальний файл.');},15000);
+      player=new window.YT.Player(slot,{width:'100%',height:270,videoId:tracks[chapter].video,playerVars:{playsinline:1,origin:location.origin,autoplay:1,loop:1,playlist:tracks[chapter].video},events:{
+        onReady:()=>{if(token!==request||!eligible)return;clearTimeout(playerTimeout);ready=true;apply();player.getIframe?.().setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');player.playVideo();message('Музика цього спогаду грає автоматично. Гучність — у налаштуваннях.');},
+        onAutoplayBlocked:()=>{if(token!==request)return;source='blocked';document.querySelector('#enable-online').hidden=false;message('Браузер призупинив автоматичний звук. Натисни ▶ у програвачі або «Відновити музику».');},
         onError:()=>{if(token===request){clearTimeout(playerTimeout);message('Відео недоступне у вбудованому програвачі. Відкрий його на YouTube або вибери локальний файл.');}}
       }});
     }catch{if(token===request)message('Не вдалося підключити YouTube. Можна відкрити офіційне відео або вибрати локальний файл.');}
@@ -78,5 +85,5 @@
     document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
   }
   if(typeof document!=='undefined')document.addEventListener('DOMContentLoaded',init);
-  return {tracks,scene,stop,apply};
+  return {tracks,scene,stop,apply,unlock};
 });
