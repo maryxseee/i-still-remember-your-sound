@@ -8,5 +8,6 @@
 .photocard img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:1px}.photocard figcaption{padding:14px 6px 0;font-size:16px;line-height:1.6}.photocard b{display:block;font-size:19px;margin-bottom:7px}.photo-locked{min-height:180px;display:grid;place-content:center;text-align:center;border:1px dashed #b3bdbb55;border-radius:8px;padding:20px}.photo-locked p{font-size:16px}
 .photo-reward{margin:18px 0;max-width:440px}.photo-reward .photocard{transform:rotate(-1deg)}
 .memory-role{color:#ead2ae;font-size:15px;line-height:1.5}
+.menu-description small{display:block;margin-top:12px;font-size:15px;line-height:1.6}
 .photo-image{display:block;width:100%;padding:0;background:transparent;border:0;cursor:zoom-in}.photo-image:hover{transform:none;filter:brightness(1.08)}
 @media(max-width:500px){.music-panel{padding:18px}.music-actions{align-items:stretch;flex-direction:column}.photo-grid{grid-template-columns:1fr}}
