@@ -1,88 +1,61 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.GameMusic=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
-  const tracks={
-    vinyl:{title:'Fleetwood Mac — Dreams',video:'Y3ywicffOj4'},
-    tape:{title:'The Cranberries — Dreams',video:'Yam5uK6e-bQ'},
-    cd:{title:'Coldplay — Clocks',video:'d020hcWA_Wg'}
-  };
-  let chapter=null,eligible=false,player=null,ready=false,request=0,apiPromise,source=null,playerTimeout,armed=false;
-  const local=new Map();
-  const panel=()=>document.querySelector('#music-panel');
-  const audio=()=>document.querySelector('#local-music');
+  const track=(title,file,slug)=>({title,artist:'Scott Buckley',file:`assets/audio/${file}.mp3`,license:'CC BY 4.0',page:`https://www.scottbuckley.com.au/library/${slug}/`});
+  const childhood=track('Childhood','childhood','childhood');
+  const tracks={prologue:childhood,vinyl:track('Golden Hour','golden-hour','golden-hour'),tape:track('Reverie','reverie','reverie'),cd:childhood,finale:childhood};
+  let desired=null,activeFile=null,armed=false,pending=false,sequence=0,transitionTimer=null,context=null,gain=null,chapter=null;
+  const audio=()=>document.querySelector('#game-music');
+  const settings=()=>window.GameAudio.settings;
   const message=text=>{document.querySelector('#music-message').textContent=text;};
-  function settings(){return window.GameAudio.settings;}
-  function apply(){
-    const s=settings(),volume=s.muted?0:s.music;
-    audio().volume=volume;
-    if(ready&&player){player.setVolume(volume*100);s.muted?player.mute():player.unMute();}
+  const retry=visible=>{document.querySelector('#music-retry').hidden=!visible;};
+  function level(value,seconds=.45){
+    const a=audio(),s=settings();a.muted=s.muted;
+    if(gain&&context){a.volume=1;const t=context.currentTime;gain.gain.cancelScheduledValues(t);gain.gain.setValueAtTime(gain.gain.value,t);gain.gain.linearRampToValueAtTime(s.muted?0:value,t+seconds);}
+    else a.volume=s.muted?0:Math.max(0,Math.min(1,value));
   }
-  function clearPlayer(){request++;clearTimeout(playerTimeout);if(player){player.destroy();player=null;}ready=false;source=null;audio().pause();document.querySelector('#online-music').replaceChildren();}
-  function stop(){clearPlayer();chapter=null;eligible=false;panel().hidden=true;}
-  function pause(){audio().pause();if(ready&&player)player.pauseVideo();}
+  function connect(){
+    if(context)return;
+    try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;context=new AC();gain=context.createGain();gain.gain.value=0;context.createMediaElementSource(audio()).connect(gain);gain.connect(context.destination);}catch{context=null;gain=null;}
+  }
+  function cancelTransition(){clearTimeout(transitionTimer);transitionTimer=null;}
+  function start(token=sequence){
+    if(token!==sequence||!desired||!armed||document.hidden)return;
+    const a=audio(),file=desired.file;
+    if(file!==activeFile){a.src=file;a.load();activeFile=file;pending=false;}
+    if(pending||!a.paused){apply();return;}
+    pending=true;retry(false);message('Музика завантажується…');level(settings().music,.65);
+    try{Promise.resolve(a.play()).then(()=>{if(token===sequence)pending=false;},error=>{
+      if(token!==sequence)return;pending=false;retry(true);
+      message(error?.name==='NotAllowedError'?'Браузер очікує дотик для звуку. Натисни «Увімкнути музику».':'Не вдалося завантажити музику. Натисни «Увімкнути музику», щоб повторити.');
+    });}catch{pending=false;retry(true);message('Натисни «Увімкнути музику», щоб повторити запуск.');}
+  }
   function unlock(){
-    armed=true;
-    loadAPI().catch(()=>{});
-    if(eligible&&!source)online();
+    armed=true;connect();if(context)context.resume().catch(()=>{});
+    if(desired&&!transitionTimer&&audio().paused)start();
   }
+  function apply(){level(desired&&armed&&!document.hidden?settings().music:0,.12);}
   function scene(next,playing,lost){
     if(!tracks[next])return stop();
-    const available=playing&&!lost;
-    if(next!==chapter){
-      clearPlayer();chapter=next;eligible=false;panel().hidden=false;
-      document.querySelector('#music-title').textContent=tracks[next].title;
-      const link=document.querySelector('#music-link');link.href=`https://www.youtube.com/watch?v=${tracks[next].video}`;
-      audio().hidden=true;message('Музика відкриється після відновлення запису.');
-    }
-    const becameAvailable=available&&!eligible;eligible=available;
-    document.querySelector('#enable-online').disabled=!eligible;
-    document.querySelector('#choose-music').disabled=!eligible;
-    if(!eligible){pause();audio().hidden=true;if(player||source){clearPlayer();}message(lost?'Носій зник — настала тиша.':'Віднови запис, щоб послухати цю композицію.');}
-    else if(becameAvailable||!source){
-      message('Запис відновлено. Музика починається автоматично.');
-      if(local.has(chapter)&&(becameAvailable||source!=='local'))useLocal();
-      else if(armed&&!source)online();
-    }
+    const target=lost?null:tracks[next];
+    document.querySelector('#music-panel').hidden=false;
+    document.querySelector('#music-title').textContent=tracks[next].title+' — Scott Buckley';
+    const credit=document.querySelector('#music-credit');credit.href=tracks[next].page;credit.textContent='Scott Buckley · CC BY 4.0';
+    if(chapter===next&&desired===target)return;
+    chapter=next;desired=target;sequence++;cancelTransition();pending=false;const token=sequence;
+    if(!target){retry(false);message('Носій зник — музика стихає.');level(0,.3);transitionTimer=setTimeout(()=>{transitionTimer=null;if(token===sequence&&!desired)audio().pause();},320);return;}
+    if(!armed){message('Почни історію, щоб почути музику.');return;}
+    if(activeFile&&activeFile!==target.file&&!audio().paused){
+      level(0,.32);message('Наступний спогад…');transitionTimer=setTimeout(()=>{transitionTimer=null;if(token!==sequence)return;audio().pause();start(token);},350);
+    }else start(token);
   }
-  function loadAPI(){
-    if(window.YT?.Player)return Promise.resolve();
-    if(apiPromise)return apiPromise;
-    apiPromise=new Promise((resolve,reject)=>{
-      const timeout=setTimeout(()=>reject(new Error('timeout')),15000);
-      window.onYouTubeIframeAPIReady=()=>{clearTimeout(timeout);resolve();};
-      const script=document.createElement('script');script.src='https://www.youtube.com/iframe_api';
-      script.onerror=()=>{clearTimeout(timeout);reject(new Error('network'));};document.head.append(script);
-    }).catch(error=>{apiPromise=null;throw error;});return apiPromise;
-  }
-  async function online(){
-    if(!eligible)return;
-    clearPlayer();const token=request,target=chapter;source='online';audio().hidden=true;message('Завантажуємо офіційний програвач…');
-    try{
-      await loadAPI();if(token!==request||target!==chapter||!eligible)return;
-      const slot=document.createElement('div');slot.id='youtube-player';document.querySelector('#online-music').append(slot);
-      playerTimeout=setTimeout(()=>{if(token===request&&!ready)message('Програвач не відповідає. Натисни «Відновити музику», відкрий офіційне відео або вибери локальний файл.');},15000);
-      player=new window.YT.Player(slot,{width:'100%',height:270,videoId:tracks[chapter].video,playerVars:{playsinline:1,origin:location.origin,autoplay:1,loop:1,playlist:tracks[chapter].video},events:{
-        onReady:()=>{if(token!==request||!eligible)return;clearTimeout(playerTimeout);ready=true;apply();player.getIframe?.().setAttribute('allow','autoplay; encrypted-media; picture-in-picture; fullscreen');player.playVideo();message('Музика цього спогаду грає автоматично. Гучність — у налаштуваннях.');},
-        onAutoplayBlocked:()=>{if(token!==request)return;source='blocked';document.querySelector('#enable-online').hidden=false;message('Браузер призупинив автоматичний звук. Натисни ▶ у програвачі або «Відновити музику».');},
-        onError:()=>{if(token===request){clearTimeout(playerTimeout);message('Відео недоступне у вбудованому програвачі. Відкрий його на YouTube або вибери локальний файл.');}}
-      }});
-    }catch{if(token===request)message('Не вдалося підключити YouTube. Можна відкрити офіційне відео або вибрати локальний файл.');}
-  }
-  function useLocal(){
-    if(!eligible||!local.has(chapter))return;
-    clearPlayer();source='local';audio().src=local.get(chapter);audio().hidden=false;apply();
-    message('Аудіофайл із твого пристрою. Він не завантажується в мережу.');
-    audio().play().catch(()=>message('Натисни ▶ в аудіопрогравачі.'));
-  }
+  function stop(){sequence++;cancelTransition();desired=null;chapter=null;pending=false;audio().pause();activeFile=null;level(0,0);document.querySelector('#music-panel').hidden=true;}
   function init(){
-    document.querySelector('#enable-online').addEventListener('click',online);
-    document.querySelector('#choose-music').addEventListener('click',()=>document.querySelector('#music-file').click());
-    document.querySelector('#music-file').addEventListener('change',e=>{
-      const file=e.target.files[0];e.target.value='';if(!file||!eligible)return;
-      if(file.type&&!file.type.startsWith('audio/'))return message('Обери аудіофайл MP3, OGG, WAV або M4A.');
-      if(local.has(chapter))URL.revokeObjectURL(local.get(chapter));local.set(chapter,URL.createObjectURL(file));useLocal();
-    });
-    audio().addEventListener('error',()=>message('Браузер не зміг прочитати цей аудіофайл. Спробуй інший.'));
-    document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+    const a=audio();a.loop=true;a.preload='auto';a.setAttribute('playsinline','');
+    document.querySelector('#music-retry').addEventListener('click',()=>{sequence++;cancelTransition();pending=false;a.pause();activeFile=null;unlock();});
+    a.addEventListener('playing',()=>{if(!desired||document.hidden){a.pause();return;}pending=false;retry(false);message('Звучить: '+desired.title+'. Гучність — у налаштуваннях.');});
+    a.addEventListener('waiting',()=>{if(desired)message('Музика завантажується…');});
+    a.addEventListener('error',()=>{if(!desired)return;pending=false;retry(true);message('Запис не завантажився. Перевір з’єднання й натисни «Увімкнути музику».');});
+    document.addEventListener('visibilitychange',()=>{sequence++;cancelTransition();pending=false;if(document.hidden)a.pause();else if(desired&&armed){if(context)context.resume().catch(()=>{});start();}});
   }
   if(typeof document!=='undefined')document.addEventListener('DOMContentLoaded',init);
   return {tracks,scene,stop,apply,unlock};

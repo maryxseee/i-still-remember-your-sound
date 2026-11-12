@@ -1,5 +1,6 @@
 .music-panel{margin:24px 0;padding:24px;border:1px solid #a3b2ac45;border-radius:18px;background:#17272b;color:#f3e8d3}
 .music-panel[hidden],audio[hidden]{display:none}
+.music-actions [hidden]{display:none!important}
 .music-panel h2{font-size:23px;margin:8px 0}.music-panel p{font-size:16px;line-height:1.6}
 .music-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.music-actions a{color:#e4bc87;text-decoration:underline}
 #online-music:not(:empty){margin-top:20px;max-width:640px}#online-music iframe{width:100%;min-width:200px;height:270px;border:0;border-radius:8px}
