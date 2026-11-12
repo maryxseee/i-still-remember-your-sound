@@ -1,72 +1,17 @@
-(function (root, factory) {
-  const api = factory();
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  else root.GameFlow = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  'use strict';
-  function split(text, limit = 260) {
-    const words = String(text).split(/\s+/).filter(Boolean), chunks = [];
-    let line = '';
-    for (const word of words) {
-      if (line && (line + ' ' + word).length > limit) { chunks.push(line); line = word; }
-      else line += (line ? ' ' : '') + word;
-    }
-    if (line) chunks.push(line);
-    return chunks;
-  }
-  const beat = (speaker, text, dim = false) => split(text).map(text => ({ speaker, text, dim }));
-  const guides = [
-    { question: 'Як візьмеш платівку?', before: 'Почнімо з платівки. Канавки на її поверхні зберігають звук. Подумай, як узяти її, щоб не залишити слідів.', options: [['edges', 'Обережно взяти за краї'], ['surface', 'Взяти за поверхню']] },
-    { question: 'На платівці є пил. Що зробиш?', before: 'Так, за краї. А тепер придивися: на поверхні залишився пил. Перш ніж слухати, підготуймо платівку.', options: [['clean', 'Прибрати пил щіткою для платівок'], ['play', 'Запустити як є']] },
-    { question: 'Платівка чиста. Яка наступна дія?', before: 'Готово, пилу більше немає. Тепер треба розмістити платівку на програвачі. Голку поки не опускаємо.', options: [['place', 'Покласти платівку на диск програвача'], ['play', 'Одразу опустити голку']] },
-    { question: 'Яку швидкість обереш?', before: 'Платівка на місці. На етикетці є підказка: «33⅓ об/хв». Звір її з перемикачем швидкості на програвачі.', options: [['45', '45 об/хв'], ['33', '33⅓ об/хв']] },
-    { question: 'Усе підготовлено. Запустимо?', before: 'Швидкість налаштована правильно. Залишився останній рух — запустити програвач і обережно опустити тонарм.', options: [['play', 'Запустити й обережно опустити тонарм'], ['45', 'Перемкнути на іншу швидкість']] }
-  ];
-  function vinylGuide(step) { return guides[step] || guides[0]; }
-  function key(state) { return `${state.chapter}:${state.phase}:${state.step}:${state.ending || ''}`; }
-  function sequence(state, story) {
-    const c = story.chapters[state.chapter];
-    if (state.phase === 'ended') {
-      const end = story.endings[state.ending];
-      return [...beat('Твоя історія', end.text), ...beat('Твоя думка', end.quote), ...story.journal(state.choices).flatMap(n => beat(n.title, n.text))];
-    }
-    if (state.phase === 'loss') return [
-      ...beat(c.person, c.aftermath[state.choices[state.chapter]]),
-      ...beat('А якби носія не залишилося?', c.loss, true),
-      ...beat('Спогад залишається', c.transition)
-    ];
-    if (state.phase === 'choice') return [...beat(c.person, c.success), ...beat(c.person, c.question)];
-    if (state.chapter === 'vinyl' && state.step > 0) return beat('Ребекка', vinylGuide(state.step).before);
-    const opening = [...beat('Історія', c.intro), ...beat(c.person, c.line)];
-    if (state.chapter === 'prologue') return [...opening, ...beat('Твоя думка', 'На столі стара коробка. Оглянь її й прочитай записку. Речі можна натискати на сцені або обирати їхні назви під діалогом.')];
-    if (state.chapter === 'vinyl') return [...opening, ...beat('Ребекка', 'Допоможеш мені підготувати програвач? Спочатку можна оглянути речі. Коли будеш готова, натисни «До програвача». Я буду поруч на кожному кроці.')];
-    if (state.chapter === 'tape') return [...opening,
-      ...beat('Джоні', 'Тут три фрагменти одного послання. Потрібно розташувати їх від першого до останнього. Лист і список композицій підкажуть, із чого все почалося.'),
-      ...beat('Джоні', 'Коли відкриєш касету, пересувай картки стрілками ↑ ↓. Верхня звучить першою, нижня — останньою. Потім натисни «Перевірити порядок». Звук для розв’язання не потрібен.')];
-    if (state.chapter === 'cd') return [...opening,
-      ...beat('Анжела', 'Допоможи знайти запис. Спочатку оберемо один із трьох дисків, потім — пристрій. Формат диска має підходити до пристрою.'),
-      ...beat('Анжела', 'Можеш спершу оглянути підписи на дисках і пристроях. Коли будеш готова, натисни «Знайти запис». Якщо не вийде — спробуємо іншу пару.')];
-    return [...opening, ...beat('Твоя думка', c.task)];
-  }
-  function presentation(state, story) {
-    const saved = state.presentation;
-    const matching = saved && saved.key === key(state);
-    const cursor = matching && Number.isInteger(saved.cursor) && saved.cursor >= 0 ? Math.min(saved.cursor, sequence(state, story).length) : 0;
-    const activity = matching && ['explore', 'puzzle'].includes(saved.activity) ? saved.activity : state.chapter === 'vinyl' && state.step > 0 ? 'puzzle' : 'explore';
-    return { key: key(state), cursor, activity, ready: cursor >= sequence(state, story).length };
-  }
-  function update(state, story, change) {
-    const p = presentation(state, story);
-    return { ...state, presentation: { key: p.key, cursor: p.cursor, activity: p.activity, ...change } };
-  }
-  function advance(state, story) {
-    const p = presentation(state, story);
-    return update(state, story, { cursor: Math.min(p.cursor + 1, sequence(state, story).length) });
-  }
-  function startPuzzle(state, story) {
-    if (state.phase !== 'explore' || !['vinyl', 'tape', 'cd'].includes(state.chapter) || !presentation(state, story).ready) return state;
-    return update(state, story, { activity: 'puzzle' });
-  }
-  function explore(state, story) { return update(state, story, { activity: 'explore' }); }
-  return { split, key, sequence, presentation, advance, startPuzzle, explore, vinylGuide };
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.GameFlow=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+'use strict';
+function split(text,limit=280){const words=String(text).split(/\s+/).filter(Boolean),out=[];let line='';for(const w of words){if(line&&(line+' '+w).length>limit){out.push(line);line=w;}else line+=(line?' ':'')+w;}if(line)out.push(line);return out;}
+function sequence(s,story){const c=story.chapters[s.chapter];let beats=[];if(s.phase==='intro')beats=c.intro;else if(s.phase==='result'||s.phase==='closure')beats=c[s.phase][s.outcomes[s.chapter]?'saved':'lost'];else if(s.phase==='absence')beats=c.absence;else if(s.phase==='ended')beats=story.endings[s.ending].beats;return (beats||[]).flatMap(b=>split(b.text).map(text=>({...b,text})));}
+function scene(s){const grouped=['result','closure'].includes(s.phase),absence=s.phase==='absence',ended=s.phase==='ended';return {image:ended?`ending-${s.ending}`:absence?`${s.chapter}-absence`:grouped?`${s.chapter}-together`:s.chapter==='finale'?'prologue':s.chapter,hideCast:grouped||absence||ended,silent:absence,label:absence?'А якби цього вечора не було?':ended?'Твоя історія продовжується':grouped?'Вечір, який справді відбувся':''};}
+const vinyl=[
+{question:'Як дістанеш платівку з конверта?',options:[['edges','Притримати за краї й середину'],['surface','Взяти за чорну поверхню']]},
+{question:'На поверхні видно пил. Чим скористаєшся?',options:[['clean','Щіткою біля програвача'],['rough','Потерти рукавом сильніше']]},
+{question:'Платівка в руках. Що зробиш далі?',options:[['place','Покласти на диск програвача'],['rush','Підкинути й перехопити однією рукою']]},
+{question:'На яку швидкість установиш перемикач?',options:[['45','45 об/хв'],['33','33⅓ об/хв']]},
+{question:'Як почнеш відтворення?',options:[['play','Запустити й плавно опустити тонарм'],['force','Притиснути тонарм, щоб не стрибав']]}
+];
+function risk(s){const k=s.pendingRisk?.kind;if(k==='vinyl')return {title:'Це може пошкодити платівку',text:'На канавках можуть залишитися подряпини або тріщина. Якщо продовжити, цей примірник уже не вдасться зберегти справним. Ти хочеш зробити саме так?',confirm:'Так, зробити це'};if(k==='copy')return {title:'Перевір напрямок запису',text:`Відтворюватиметься касета ${s.puzzle.source}. Записуватиметься касета ${s.puzzle.target}. Попередній вміст цільової касети буде замінено. Звір маркування, перш ніж натиснути Record.`,confirm:'Записати в цьому напрямку'};if(k==='archive')return {title:'Цей диск залишиться у коробці',text:s.puzzle.verified?'Ти прослухала уривок і бачила тривалість. Чи відповідають вони вечору, який Софія хоче зберегти?':'Ти ще не перевірила вміст диска. Можна ризикнути й покласти його в коробку, але підпис сам по собі не гарантує потрібного запису.',confirm:'Залишити цей диск'};return null;}
+function restore(s,story){if(!s)return null;const length=sequence(s,story).length;if(!length)return s;const max=length-(s.phase==='ended'?0:1);return s.cursor>max?{...s,cursor:max}:s;}
+function personalClosing(s,story){const end=story.endings[s.ending];if(!s.song.title)return end.closing+(s.song.memory?` Ти теж поділилася своїм спогадом: «${s.song.memory}». Тепер у вас є ще одна історія, яку хочеться берегти.`:'');const memory=s.song.memory?` Ти розповіла: «${s.song.memory}».`:' Ти розповіла, чому обрала саме її.';return `Коли настала твоя черга, ви послухали пісню «${s.song.title}».${memory} Твоя музика теж стала приводом залишитися поруч. Цей вечір уже став вашим спільним спогадом.`;}
+return {split,sequence,scene,restore,vinylGuide:step=>vinyl[step]||vinyl[0],risk,personalClosing};
 });
