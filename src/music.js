@@ -42,7 +42,7 @@
     const credit=document.querySelector('#music-credit');credit.href=tracks[next].page;credit.textContent='Scott Buckley · CC BY 4.0';
     if(chapter===next&&desired===target)return;
     chapter=next;desired=target;sequence++;cancelTransition();pending=false;const token=sequence;
-    if(!target){retry(false);message('Носій зник — музика стихає.');level(0,.3);transitionTimer=setTimeout(()=>{transitionTimer=null;if(token===sequence&&!desired)audio().pause();},320);return;}
+    if(!target){retry(false);message('У цьому можливому житті музика не прозвучала.');level(0,.3);transitionTimer=setTimeout(()=>{transitionTimer=null;if(token===sequence&&!desired)audio().pause();},320);return;}
     if(!armed){message('Почни історію, щоб почути музику.');return;}
     if(activeFile&&activeFile!==target.file&&!audio().paused){
       level(0,.32);message('Наступний спогад…');transitionTimer=setTimeout(()=>{transitionTimer=null;if(token!==sequence)return;audio().pause();start(token);},350);
