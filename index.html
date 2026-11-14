@@ -22,6 +22,7 @@
   <script defer src="src/inspection.js"></script>
   <script defer src="src/audio.js"></script>
   <script defer src="src/music.js"></script>
+  <script defer src="src/intro.js"></script>
   <script defer src="src/app.js"></script>
 </head>
 <body>
@@ -38,6 +39,11 @@
   </div>
   <dialog id="modal" aria-labelledby="modal-title"><div class="modal-header"><span class="eyebrow" id="modal-kicker">ЗАПИС</span><button id="close-modal" class="icon-button" aria-label="Закрити вікно">×</button></div><h2 id="modal-title"></h2><div id="modal-content"></div></dialog>
   <dialog id="interaction-modal" aria-labelledby="interaction-title"><div class="interaction-header"><h2 id="interaction-title">Взаємодія</h2><button class="quiet" data-action="settings">Налаштування</button><button class="icon-button" data-action="close-interaction" aria-label="Закрити вікно взаємодії">×</button></div><div id="interaction-content" class="story-panel interaction-panel"></div></dialog>
+  <dialog id="intro-modal" class="intro-modal" aria-labelledby="intro-title">
+    <h2 id="intro-title" class="sr-only">Коли зникає з’єднання</h2>
+    <video id="intro-video" controls playsinline preload="none" poster="assets/video/connection-poster.jpg" aria-label="Ребекка слухає музику. З’єднання зникає, музика обривається. Вона помічає стару коробку з платівкою, касетою та дисками."></video>
+    <div class="intro-controls"><p id="intro-message" role="status"></p><button id="intro-resume" class="secondary" hidden>Продовжити відео</button><button id="intro-skip" class="primary">Пропустити вступ →</button></div>
+  </dialog>
   <div id="scene-transition" class="scene-transition" aria-hidden="true"><span>Спогад наближається…</span></div>
   <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
   <input id="import-save" type="file" accept=".json,application/json" hidden>
