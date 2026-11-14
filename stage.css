@@ -1,0 +1,68 @@
+/* Interaction lifecycle: devices exist only inside the open interaction dialog. */
+.scene-window .action-stage,.scene-window .inline-mechanism,.scene-window .ending-props { display:none; }
+.dialogue-body { display:block; }
+.character { height:88%; transform-origin:50% 100%; transform:scale(1); transition:transform .35s ease; }
+.character img { opacity:.73; filter:brightness(.85); transition:filter .35s ease,opacity .35s ease; }
+.character.speaking { transform:scale(1.1) translateY(-3px); z-index:3; }
+.character.speaking img { opacity:1; filter:brightness(1.08) drop-shadow(0 0 17px #ffdf9b99); }
+.character.speaker-arriving { animation:speaker-approach .35s ease-out both; }
+.character:hover img,.character:focus-visible img { opacity:1; }
+@keyframes speaker-approach { from{transform:scale(1)} to{transform:scale(1.1) translateY(-3px)} }
+#interaction-modal { width:min(1120px,calc(100vw - 40px)); max-height:calc(100dvh - 36px); padding:0; background:#17262d; border:1px solid #d5b78c99; border-radius:12px; box-shadow:0 25px 100px #000b; }
+#interaction-modal::backdrop { background:#07131cda; backdrop-filter:none; }
+.interaction-header { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:16px; padding:15px 24px; border-bottom:1px solid #d5b78c50; background:#17262d; }
+.interaction-header h2 { margin:0 auto 0 0; font-size:28px; line-height:1.25; }
+.interaction-header .quiet { font-size:16px; }
+.interaction-panel.story-panel { position:static; margin:0; padding:24px 30px 28px; border:0; border-radius:0; box-shadow:none; min-height:0; background:transparent; }
+.interaction-panel .dialogue-body.with-device { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,360px); align-items:center; gap:24px; }
+.interaction-panel .inline-mechanism { background:#101e26; }
+.interaction-panel .dialogue-text { font-size:var(--dialogue-size); }
+.interaction-panel .dialogue-controls { margin-top:20px; }
+.interaction-panel .hero-reaction { display:flex; align-items:center; justify-content:flex-end; gap:11px; margin:0 0 16px; padding-bottom:14px; border-bottom:1px solid #ffffff1f; color:#e1dacb; font-size:17px; }
+.hero-reaction .speaker-avatar { width:62px; height:62px; }
+.hero-reaction .speaker-avatar img { height:320px; }
+.hero-reaction[data-mood="sad"] { color:#ead2c8; }
+.hero-reaction[data-mood="happy"] { color:#c8e4c1; }
+.interaction-panel .puzzle .primary,.interaction-panel .puzzle .secondary { margin-top:8px; }
+.interaction-panel .help-actions { margin-top:12px; }
+.scene-transition { position:fixed; inset:0; z-index:60; display:grid; place-items:center; opacity:0; pointer-events:none; background:radial-gradient(ellipse at center,#51666e18 15%,#102333a6 60%,#06111df5 100%); }
+.scene-transition span { color:#f6e8cd; font-family:var(--serif); font-size:clamp(24px,4vw,42px); letter-spacing:.5px; padding:15px 25px; background:#132330aa; border-radius:8px; }
+.scene-transition.transition-memory { animation:memory-veil 950ms ease-in-out both; }
+.scene-transition.transition-fade { animation:chapter-fade 650ms ease-in-out both; }
+.scene-image.memory-arrival { animation:memory-dizziness 950ms ease-in-out both; }
+.scene-transition.soft-transition { animation:soft-memory-fade 320ms ease-in-out both!important; }
+@keyframes memory-veil { 0%{opacity:0} 30%,55%{opacity:1} 100%{opacity:0} }
+@keyframes chapter-fade { 0%{opacity:0} 40%{opacity:.7} 100%{opacity:0} }
+@keyframes soft-memory-fade { 0%{opacity:0} 45%{opacity:.5} 100%{opacity:0} }
+@keyframes memory-dizziness {
+  0%{transform:scale(1);filter:blur(0)}
+  25%{transform:scale(1.07) rotate(-1.3deg);filter:blur(4px)}
+  50%{transform:scale(1.05) rotate(1.1deg);filter:blur(2px)}
+  100%{transform:scale(1);filter:blur(0)}
+}
+@media(max-width:850px) {
+  .character { height:88%; }
+  .interaction-panel .dialogue-body.with-device { grid-template-columns:1fr minmax(220px,300px); }
+}
+@media(max-width:600px) {
+  .character { height:88%; }
+  #interaction-modal { width:calc(100vw - 16px); max-height:calc(100dvh - 20px); border-radius:9px; }
+  .interaction-header { padding:12px 14px; gap:8px; flex-wrap:wrap; }
+  .interaction-header h2 { font-size:23px; flex:1; }
+  .interaction-header .quiet { font-size:14px; }
+  .interaction-panel.story-panel { padding:18px 18px 22px; }
+  .interaction-panel .dialogue-body.with-device { grid-template-columns:1fr; gap:16px; }
+  .interaction-panel .hero-reaction { justify-content:flex-start; font-size:16px; }
+  .hero-reaction .speaker-avatar { width:54px; height:54px; }
+  .hero-reaction .speaker-avatar img { height:285px; }
+  .interaction-panel .dialogue-controls { margin-top:16px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .character.speaker-arriving { animation:none!important; }
+  .character,.character img { transition:none!important; }
+  .scene-image.memory-arrival { animation:none!important; }
+  #scene-transition.soft-transition { animation:soft-memory-fade 320ms ease-in-out both!important; }
+}
+.reduce-motion .character.speaker-arriving,.reduce-motion .scene-image.memory-arrival { animation:none!important; }
+.reduce-motion .character,.reduce-motion .character img { transition:none!important; }
+.reduce-motion #scene-transition.soft-transition { animation:soft-memory-fade 320ms ease-in-out both!important; }
