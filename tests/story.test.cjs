@@ -8,7 +8,7 @@ const keys=['000','001','010','011','100','101','110','111'];
 function checkBeats(rows,min,max,label){
   assert.ok(Array.isArray(rows),label);
   assert.ok(rows.length>=min&&rows.length<=max,`${label}: ${rows.length}`);
-  for(const b of rows){assert.equal(typeof b.speaker,'string');assert.ok(b.speaker.length);assert.equal(typeof b.text,'string');assert.ok(b.text.trim().length>0);assert.ok(b.text.length<=260,`${label}: ${b.text.length} ${b.text}`);}
+  for(const b of rows){assert.equal(typeof b.speaker,'string');assert.ok(b.speaker.length);assert.equal(typeof b.text,'string');assert.ok(b.text.trim().length>0);assert.ok(b.text.length<=600,`${label}: ${b.text.length} ${b.text}`);}
 }
 test('UMD provides the same usable data in a plain browser',()=>{
   const context={};vm.createContext(context);vm.runInContext(fs.readFileSync(require.resolve('../src/story.js'),'utf8'),context);
@@ -18,7 +18,7 @@ test('UMD provides the same usable data in a plain browser',()=>{
 test('all chapters have ordered readable beats and stable exploration objects',()=>{
   const ids={prologue:['phone','headphones','box','note'],vinyl:['sleeve','invitation','record','turntable'],tape:['cassette','player','letter','list'],cd:['discs','computer','player','catalog'],finale:['collection','journal']};
   for(const [id,objects] of Object.entries(ids)){
-    const c=S.chapters[id];checkBeats(c.intro,id==='prologue'?10:id==='finale'?8:15,22,id);
+    const c=S.chapters[id];checkBeats(c.intro,id==='prologue'?6:id==='finale'?5:8,12,id);
     assert.deepEqual(c.objects.map(o=>o.id),objects);
     assert.equal(c.hints.length,3);assert.ok(new Set(c.hints).size===3);
     for(const o of c.objects){assert.ok(o.label&&o.text.length>35);assert.ok(o.x>=0&&o.x<=100&&o.y>=0&&o.y<=100);}
@@ -28,8 +28,8 @@ test('all chapters have ordered readable beats and stable exploration objects',(
 test('consequences distinguish actual saved and lost audio from hypothetical absence',()=>{
   for(const id of core){const c=S.chapters[id];
     for(const field of ['name','relation','year','title','caption']) assert.ok(c.memory[field]);
-    for(const outcome of ['saved','lost']){checkBeats(c.result[outcome],8,12,id+' result '+outcome);checkBeats(c.closure[outcome],4,6,id+' closure '+outcome);}
-    checkBeats(c.absence,4,6,id+' absence');
+    for(const outcome of ['saved','lost']){checkBeats(c.result[outcome],4,7,id+' result '+outcome);checkBeats(c.closure[outcome],3,4,id+' closure '+outcome);}
+    checkBeats(c.absence,3,3,id+' absence');
     assert.match(c.absence.map(b=>b.text).join(' '),/уяв|можлив/i);
     assert.notDeepEqual(c.result.saved,c.result.lost);assert.notDeepEqual(c.closure.saved,c.closure.lost);
   }
@@ -53,7 +53,7 @@ test('puzzles are justified by inspectable evidence, not answer lines in main di
 });
 test('eight automatic outcome endings have distinct scenes, dialogue and consequences',()=>{
   assert.deepEqual(Object.keys(S.endings).sort(),keys);
-  for(const key of keys){const e=S.endings[key];assert.equal(e.scene,'ending-'+key);for(const field of ['title','mood','caption','closing'])assert.ok(e[field]);checkBeats(e.beats,8,12,key);}
+  for(const key of keys){const e=S.endings[key];assert.equal(e.scene,'ending-'+key);for(const field of ['title','mood','caption','closing'])assert.ok(e[field]);checkBeats(e.beats,5,7,key);}
   for(const field of ['title','scene','closing'])assert.equal(new Set(Object.values(S.endings).map(e=>e[field])).size,8);
   assert.match(S.endings['000'].beats.map(b=>b.text).join(' '),/Лука|носіями/);
   assert.match(S.chapters.finale.intro.map(b=>b.text).join(' '),/З’єднання відновлено/);

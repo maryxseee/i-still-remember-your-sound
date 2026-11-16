@@ -3,7 +3,7 @@
 const chapters=['prologue','vinyl','tape','cd','finale'],core=['vinyl','tape','cd'],endings=Array.from({length:8},(_,n)=>n.toString(2).padStart(3,'0'));
 const objectIds={prologue:['phone','headphones','box','note'],vinyl:['sleeve','invitation','record','turntable'],tape:['cassette','player','letter','list'],cd:['discs','computer','player','catalog'],finale:['collection','journal']};
 const freshPuzzle=()=>({order:['meeting','unsaid','road'],source:null,target:null,disc:null,device:null,verified:false,preview:''});
-function initialState(unlocked=[]){return {version:2,chapter:'prologue',phase:'intro',cursor:0,step:0,seen:{},outcomes:{},unlocked:[...new Set(unlocked.filter(x=>endings.includes(x)))],ending:null,feedback:'',pendingRisk:null,hintLevel:0,puzzle:freshPuzzle(),song:{title:'',memory:''}};}
+function initialState(unlocked=[]){return {version:2,storyRevision:2,chapter:'prologue',phase:'intro',cursor:0,step:0,seen:{},outcomes:{},unlocked:[...new Set(unlocked.filter(x=>endings.includes(x)))],ending:null,feedback:'',pendingRisk:null,hintLevel:0,puzzle:freshPuzzle(),song:{title:'',memory:''}};}
 function endingKey(s){return core.every(id=>typeof s.outcomes[id]==='boolean')?core.map(id=>s.outcomes[id]?'1':'0').join(''):null;}
 function photos(s){return core.filter(id=>typeof s?.outcomes?.[id]==='boolean');}
 function resolve(s,saved){s.outcomes[s.chapter]=saved;s.phase='result';s.cursor=0;s.feedback='';s.pendingRisk=null;return s;}
@@ -17,8 +17,7 @@ function reduce(state,action){
  switch(action.type){
  case 'next':{
   if(!['intro','result','absence','closure','ended'].includes(s.phase)||!Number.isInteger(action.length)||action.length<1||action.length>200)return state;
-  if(action.count!==undefined&&![1,2].includes(action.count))return state;
-  s.cursor=Math.min(s.cursor+(action.count||1),action.length);if(s.cursor<action.length||s.phase==='ended')return s;
+  s.cursor=Math.min(s.cursor+1,action.length);if(s.cursor<action.length||s.phase==='ended')return s;
   s.cursor=0;
   if(s.phase==='intro')s.phase=s.chapter==='finale'?'finale':'explore';
   else if(s.phase==='result')s.phase='absence';
@@ -88,7 +87,7 @@ function parseSave(text){
   if(v.chapter==='tape'&&v.step===1&&p.order.join(',')!=='road,meeting,unsaid')return null;
   if(![null,'A','B'].includes(p.source)||![null,'A','B'].includes(p.target)||![null,...Object.keys(discs)].includes(p.disc)||![null,'computer','player'].includes(p.device)||typeof p.verified!=='boolean'||typeof p.preview!=='string'||p.preview.length>1000)return null;
   if(v.pendingRisk!==null){const r=v.pendingRisk;if(!r||v.phase!=='puzzle')return null;const valid=r.kind==='vinyl'&&v.chapter==='vinyl'&&({1:'rough',2:'rush',4:'force'})[v.step]===r.value||r.kind==='copy'&&v.chapter==='tape'&&v.step===1&&['AB','BA'].includes(r.value)&&r.value===p.source+p.target||r.kind==='archive'&&v.chapter==='cd'&&r.value===p.disc&&Object.hasOwn(discs,r.value);if(!valid)return null;}
-  const s=initialState(v.unlocked);for(const k of ['chapter','phase','cursor','step','seen','outcomes','ending','feedback','hintLevel','puzzle','pendingRisk'])s[k]=v[k];s.song={title:cleanText(v.song.title,100),memory:cleanText(v.song.memory,500)};if(v.migrated===true)s.migrated=true;return s;
+  const s=initialState(v.unlocked);s.storyRevision=v.storyRevision===2?2:1;for(const k of ['chapter','phase','cursor','step','seen','outcomes','ending','feedback','hintLevel','puzzle','pendingRisk'])s[k]=v[k];s.song={title:cleanText(v.song.title,100),memory:cleanText(v.song.memory,500)};if(v.migrated===true)s.migrated=true;return s;
  }catch{return null;}
 }
 return {initialState,reduce,endingKey,photos,serialize,parseSave,discs,chapters,endings};
