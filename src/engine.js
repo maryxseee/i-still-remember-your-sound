@@ -17,7 +17,8 @@ function reduce(state,action){
  switch(action.type){
  case 'next':{
   if(!['intro','result','absence','closure','ended'].includes(s.phase)||!Number.isInteger(action.length)||action.length<1||action.length>200)return state;
-  s.cursor=Math.min(s.cursor+1,action.length);if(s.cursor<action.length||s.phase==='ended')return s;
+  if(action.count!==undefined&&![1,2].includes(action.count))return state;
+  s.cursor=Math.min(s.cursor+(action.count||1),action.length);if(s.cursor<action.length||s.phase==='ended')return s;
   s.cursor=0;
   if(s.phase==='intro')s.phase=s.chapter==='finale'?'finale':'explore';
   else if(s.phase==='result')s.phase='absence';
