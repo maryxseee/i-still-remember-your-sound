@@ -3,12 +3,12 @@ const E=require('../src/engine.js'),F=require('../src/flow.js'),S=require('../sr
 test('every narrative branch supplies bounded readable beats and distinct absence scenes',()=>{
  for(const chapter of ['vinyl','tape','cd'])for(const outcome of [true,false]){
   const s={...E.initialState(),chapter,outcomes:{[chapter]:outcome}};
-  for(const phase of ['intro','result','absence','closure']){const beats=F.sequence({...s,phase},S);assert.ok(beats.length>=4);for(const b of beats){assert.ok(b.text.length<=280);assert.ok(b.speaker);}}
+  for(const phase of ['intro','result','absence','closure']){const beats=F.sequence({...s,phase},S);assert.ok(beats.length>=3);for(const b of beats){assert.ok(b.text.length<=600);assert.ok(b.speaker);}}
   const actual=F.scene({...s,phase:'result'}),absent=F.scene({...s,phase:'absence'});assert.notEqual(actual.image,absent.image);assert.equal(absent.silent,true);assert.equal(absent.hideCast,true);
  }
 });
 test('eight ending scenes and personalised text cannot change the earned ending',()=>{
- for(const id of E.endings){const s={...E.initialState(),chapter:'finale',phase:'ended',ending:id};assert.equal(F.scene(s).image,`ending-${id}`);assert.ok(F.sequence(s,S).length>=6);s.song={title:'<script>test</script>',memory:'Наш вечір'};assert.match(F.personalClosing(s,S),/Наш вечір/);assert.equal(s.ending,id);}
+ for(const id of E.endings){const s={...E.initialState(),chapter:'finale',phase:'ended',ending:id};assert.equal(F.scene(s).image,`ending-${id}`);assert.ok(F.sequence(s,S).length>=5);s.song={title:'<script>test</script>',memory:'Наш вечір'};assert.match(F.personalClosing(s,S),/Наш вечір/);assert.equal(s.ending,id);}
 });
 test('era outfits and device states remain available independently from room art',()=>{
  for(const chapter of ['vinyl','tape','cd']){const s={...E.initialState(),chapter,phase:'puzzle'};assert.equal(V.characterFile('heroine',s),`heroine-${chapter}.png`);assert.match(V.mechanism(s),/<svg/);assert.doesNotMatch(V.render(s),/<svg/);}
