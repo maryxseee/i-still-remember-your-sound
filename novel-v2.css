@@ -1,4 +1,11 @@
 [hidden]{display:none!important}
+.scene-window>.scene-image{object-fit:contain;object-position:center;background:#101a20}
+.scene-window .character{height:86%}
+.photocard img,.novel-ending-gallery article img{object-fit:contain;background:#101a20}
+.dialogue-part{display:block;margin-bottom:12px}.dialogue-part:last-child{margin-bottom:0}
+.dialogue-part-speaker{display:block;color:#e4c59d;font-size:17px;line-height:1.5;margin-bottom:4px}
+@media(min-width:901px){.scene-window{height:clamp(300px,47vh,540px)}.story-panel{padding:24px 30px}.dialogue-text{line-height:1.55}}
+@media(min-width:1100px){.scene-layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(360px,1fr);align-items:center;gap:18px;padding:18px}.scene-layout>.scene-window{height:auto;min-height:0;aspect-ratio:16/9}.scene-layout>.story-panel{margin:0;padding:20px;min-height:0;--dialogue-size:20px}.scene-layout .dialogue-text{line-height:1.5;margin-bottom:18px}.scene-layout .dialogue-heading{margin-bottom:12px}.scene-layout .speaker-avatar{width:54px;height:54px}.scene-layout .speaker-avatar img{height:280px}.scene-layout .speaker-avatar.avatar-portrait img{height:100%}.scene-layout .scene-caption{font-size:12px;left:10px;top:10px;max-width:calc(100% - 20px)}body[data-text-size="large"] .scene-layout>.story-panel{--dialogue-size:24px}}
 button.primary,button.primary:hover,button.primary:focus-visible{color:#181d20}
 .photocard,.photocard figcaption,.photocard figcaption b,.photocard figcaption small{color:#29251f}
 #modal[data-view="area"]{width:min(1120px,calc(100vw - 32px));padding:24px}
